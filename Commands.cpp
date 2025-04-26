@@ -84,16 +84,6 @@ SmallShell::~SmallShell() {
 // TODO: add your implementation
 }
 
-ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
-//    string cmd_s = _trim(string(cmd_line));
-    stringstream command(cmdLine);
-    string w;
-    command >> w;
-    command >> w;
-    cout << w << endl;
-//    string arguments = cmd_s.substr(cmd_s.find_first_of(WHITESPACE), );
-}
-
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
@@ -135,11 +125,29 @@ void SmallShell::executeCommand(const char *cmd_line) {
     // TODO: fork for external commands
     // for example:
     Command* cmd = CreateCommand(cmd_line);
-    if (cmd == nullptr) {
-        std::cerr << "command doesnt exist" << std::endl;
-    } else {
+    if (cmd != nullptr) {
         cmd->execute();
     }
 
     // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
+
+BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
+
+}
+
+ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
+    string cmd_s = _trim(string(cmdLine));
+    int index = (int) cmd_s.find_first_of(WHITESPACE);
+    if (index != -1) {
+        string cmd_args = _trim(cmd_s.substr(index));
+        this->newPrompt = cmd_args.substr(0, cmd_args.find_first_of(WHITESPACE));
+    } else {
+        this->newPrompt = DEFAULT_PROMPT;
+    }
+}
+
+void ChangePromptCommand::execute() {
+    SmallShell::getInstance().setPrompt(this->newPrompt);
+}
+

@@ -6,13 +6,14 @@
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
+#define DEFAULT_PROMPT "smash"
 
 class Command {
     // TODO: Add your data members
 public:
-    Command(const char *cmd_line);
+    Command(const char *cmd_line) {};
 
-    virtual ~Command();
+    virtual ~Command() = default;
 
     virtual void execute() = 0;
 
@@ -25,28 +26,35 @@ class BuiltInCommand : public Command {
 public:
     BuiltInCommand(const char *cmd_line);
 
-    virtual ~BuiltInCommand() {
-    }
+    virtual ~BuiltInCommand() = default;
 };
 
 class ExternalCommand : public Command {
 public:
     ExternalCommand(const char *cmd_line);
 
-    virtual ~ExternalCommand() {
-    }
+    virtual ~ExternalCommand() = default;
 
     void execute() override;
 };
 
+class ChangePromptCommand : public BuiltInCommand {
+    // TODO: Add your data members public:
+    std::string newPrompt;
+public:
+    explicit ChangePromptCommand(const char *cmd_line);
+
+    virtual ~ChangePromptCommand() = default;
+
+    void execute() override;
+};
 
 class RedirectionCommand : public Command {
     // TODO: Add your data members
 public:
     explicit RedirectionCommand(const char *cmd_line);
 
-    virtual ~RedirectionCommand() {
-    }
+    virtual ~RedirectionCommand() {}
 
     void execute() override;
 };
@@ -88,17 +96,6 @@ public:
     NetInfo(const char *cmd_line);
 
     virtual ~NetInfo() {
-    }
-
-    void execute() override;
-};
-
-class ChangePromptCommand : public BuiltInCommand {
-    // TODO: Add your data members public:
-public:
-    ChangePromptCommand(const char *cmd_line);
-
-    virtual ~ChangePromptCommand() {
     }
 
     void execute() override;
@@ -265,7 +262,7 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
-        instance.prompt = "smash";
+        instance.prompt = DEFAULT_PROMPT;
         // Instantiated on first use.
         return instance;
     }
