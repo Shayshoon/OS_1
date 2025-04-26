@@ -93,8 +93,20 @@ public:
     void execute() override;
 };
 
+class ChangePromptCommand : public BuiltInCommand {
+    // TODO: Add your data members public:
+public:
+    ChangePromptCommand(const char *cmd_line);
+
+    virtual ~ChangePromptCommand() {
+    }
+
+    void execute() override;
+};
+
 class ChangeDirCommand : public BuiltInCommand {
     // TODO: Add your data members public:
+public:
     ChangeDirCommand(const char *cmd_line, char **plastPwd);
 
     virtual ~ChangeDirCommand() {
@@ -242,7 +254,7 @@ public:
 
 class SmallShell {
 private:
-    // TODO: Add your data members
+    std::string prompt;
     SmallShell();
 
 public:
@@ -253,12 +265,15 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
+        instance.prompt = "smash";
         // Instantiated on first use.
         return instance;
     }
 
     ~SmallShell();
 
+    void setPrompt(std::string prompt);
+    std::string getPrompt();
     void executeCommand(const char *cmd_line);
 
     // TODO: add extra methods as needed

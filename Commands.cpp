@@ -84,34 +84,62 @@ SmallShell::~SmallShell() {
 // TODO: add your implementation
 }
 
+ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
+//    string cmd_s = _trim(string(cmd_line));
+    stringstream command(cmdLine);
+    string w;
+    command >> w;
+    command >> w;
+    cout << w << endl;
+//    string arguments = cmd_s.substr(cmd_s.find_first_of(WHITESPACE), );
+}
+
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command *SmallShell::CreateCommand(const char *cmd_line) {
     // For example:
-  /*
-  string cmd_s = _trim(string(cmd_line));
-  string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
+    string cmd_s = _trim(string(cmd_line));
+    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
 
-  if (firstWord.compare("pwd") == 0) {
-    return new GetCurrDirCommand(cmd_line);
-  }
-  else if (firstWord.compare("showpid") == 0) {
-    return new ShowPidCommand(cmd_line);
-  }
-  else if ...
-  .....
-  else {
-    return new ExternalCommand(cmd_line);
-  }
-  */
+    if (firstWord == "chprompt") {
+        return new ChangePromptCommand(cmd_line);
+    }
+    /*
+
+    if (firstWord.compare("pwd") == 0) {
+      return new GetCurrDirCommand(cmd_line);
+    }
+    else if (firstWord.compare("showpid") == 0) {
+      return new ShowPidCommand(cmd_line);
+    }
+    else if ...
+    .....
+    else {
+      return new ExternalCommand(cmd_line);
+    }
+    */
     return nullptr;
+}
+
+void SmallShell::setPrompt(std::string prompt) {
+  this->prompt = prompt;
+}
+
+std::string SmallShell::getPrompt() {
+  return this->prompt;
 }
 
 void SmallShell::executeCommand(const char *cmd_line) {
     // TODO: Add your implementation here
+    // TODO: fork for external commands
     // for example:
-    // Command* cmd = CreateCommand(cmd_line);
-    // cmd->execute();
+    Command* cmd = CreateCommand(cmd_line);
+    if (cmd == nullptr) {
+        std::cerr << "command doesnt exist" << std::endl;
+    } else {
+        cmd->execute();
+    }
+
     // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
