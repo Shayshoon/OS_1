@@ -96,6 +96,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     if (firstWord == "chprompt") {
         return new ChangePromptCommand(cmd_line);
     }
+    else if (firstWord == "showpid"){
+        return new ShowPidCommand(cmd_line);
+    }
     /*
 
     if (firstWord.compare("pwd") == 0) {
@@ -150,4 +153,10 @@ ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cm
 
 void ChangePromptCommand::execute() {
     SmallShell::getInstance().setPrompt(this->newPrompt);
+}
+
+ShowPidCommand:: ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line){}
+
+void ShowPidCommand::execute() {
+    std::cout << SmallShell::getInstance().getPrompt() << " pid is " << getpid() << std::endl;
 }
