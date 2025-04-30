@@ -78,6 +78,7 @@ void _removeBackgroundSign(char *cmd_line) {
 
 SmallShell::SmallShell() {
 // TODO: add your implementation
+    this->prompt = DEFAULT_PROMPT;
 }
 
 SmallShell::~SmallShell() {
@@ -150,4 +151,3 @@ ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cm
 void ChangePromptCommand::execute() {
     SmallShell::getInstance().setPrompt(this->newPrompt);
 }
-
