@@ -226,7 +226,7 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
 void ChangeDirCommand:: execute() {
     const char *path = SmallShell::getInstance().getcurrDirectory();
     if (chdir(path) == -1) {
-        std::cerr << "smash error: chdir failed" << std::endl;
+        perror("smash error: cd failed");
     }
 }
 char* SmallShell::getLastDirectory() {
