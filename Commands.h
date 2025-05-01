@@ -3,6 +3,7 @@
 #define SMASH_COMMAND_H_
 
 #include <vector>
+#include <map>
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
@@ -10,8 +11,9 @@
 
 class Command {
     // TODO: Add your data members
+    const char *cmd;
 public:
-    Command(const char *cmd_line) {};
+    Command(const char *cmd_line): cmd(cmd_line) { }
 
     virtual ~Command() = default;
 
@@ -20,11 +22,15 @@ public:
     //virtual void prepare();
     //virtual void cleanup();
     // TODO: Add your extra methods if needed
+
+    const char* getCmd() {
+        return this->cmd;
+    }
 };
 
 class BuiltInCommand : public Command {
 public:
-    BuiltInCommand(const char *cmd_line);
+    BuiltInCommand(const char *cmd_line): Command(cmd_line) { }
 
     virtual ~BuiltInCommand() = default;
 };
@@ -149,9 +155,37 @@ class JobsList {
 public:
     class JobEntry {
         // TODO: Add your data members
+        int id;
+        int pid;
+        bool isStopped;
+        Command *cmd;
+    public:
+        int getId() const {
+            return this->id;
+        }
+        int getPid() const {
+            return this->pid;
+        }
+        const char* getCmd() const {
+            return this->cmd->getCmd();
+        }
+        bool getIsStopped() {
+            return this->isStopped;
+        }
+
+        JobEntry(Command *cmd, bool isStopped, int id, int pid)
+            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) { }
+
+        ~JobEntry() {
+            delete cmd;
+        }
+
     };
 
     // TODO: Add your data members
+private:
+    std::map<int, JobEntry>* jobs;
+
 public:
     JobsList();
 
@@ -178,8 +212,10 @@ public:
 
 class JobsCommand : public BuiltInCommand {
     // TODO: Add your data members
+    JobsList* jobs;
 public:
-    JobsCommand(const char *cmd_line, JobsList *jobs);
+    JobsCommand(const char *cmd_line, JobsList *jobs)
+            : BuiltInCommand(cmd_line), jobs(jobs) {}
 
     virtual ~JobsCommand() {
     }
@@ -252,6 +288,7 @@ public:
 class SmallShell {
 private:
     std::string prompt;
+    JobsList* jobs;
     SmallShell();
 
 public:
@@ -262,7 +299,6 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
-        instance.prompt = DEFAULT_PROMPT;
         // Instantiated on first use.
         return instance;
     }
