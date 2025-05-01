@@ -101,6 +101,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new ChangePromptCommand(cmd_line);
     } else if (firstWord == "jobs") {
         return new JobsCommand(cmd_line, this->jobs);
+
     }
     else if (firstWord == "showpid"){
         return new ShowPidCommand(cmd_line);
@@ -110,6 +111,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     }
     else if (firstWord == "cd"){
         return new ChangeDirCommand(cmd_line,&lastDirectory);
+
     }
     /*
 
@@ -225,6 +227,7 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
         }
     }
 }
+
 void JobsCommand::execute() {
     this->jobs->removeFinishedJobs();
     this->jobs->printJobsList();
@@ -288,6 +291,7 @@ std::vector<std::string> split(const std::string& str, char delimiter) {
     }
     return result;
 }
+
 void JobsList::addJob(Command *cmd, bool isStopped) {
     pid_t pid = fork();
 
