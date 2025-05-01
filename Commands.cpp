@@ -5,6 +5,7 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
+#include <deque>
 #include "Commands.h"
 
 using namespace std;
@@ -77,13 +78,15 @@ void _removeBackgroundSign(char *cmd_line) {
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() {
-    prompt = DEFAULT_PROMPT;
     lastDirectory = nullptr;
     currDirectory = getcwd(NULL, 0);
+    this->prompt = DEFAULT_PROMPT;
+    this->jobs = new JobsList();
 }
 
 SmallShell::~SmallShell() {
 // TODO: add your implementation
+    delete this->jobs;
 }
 
 /**
@@ -96,6 +99,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
 
     if (firstWord == "chprompt") {
         return new ChangePromptCommand(cmd_line);
+    } else if (firstWord == "jobs") {
+        return new JobsCommand(cmd_line, this->jobs);
     }
     else if (firstWord == "showpid"){
         return new ShowPidCommand(cmd_line);
@@ -145,10 +150,6 @@ void SmallShell::executeCommand(const char *cmd_line) {
     // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
 
-BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
-
-}
-
 ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
     string cmd_s = _trim(string(cmdLine));
     int index = (int) cmd_s.find_first_of(WHITESPACE);
@@ -181,7 +182,7 @@ void GetCurrDirCommand::execute() {
 
 ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltInCommand(cmd_line) {
     string cmd_s = _trim(string(cmd_line));
-    char* args[10];
+    char *args[10];
     _parseCommandLine(cmd_line, args);
     if (args[2] != nullptr)//more then one arg
         std::cerr << "smash error: cd: too many arguments" << std::endl;
@@ -189,7 +190,7 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
         if (plastPwd == nullptr || *plastPwd == nullptr)//dont have last direction
             std::cerr << "smash error: cd: OLDPWD not set" << std::endl;
         else {
-            char* temp = SmallShell::getInstance().getcurrDirectory();
+            char *temp = SmallShell::getInstance().getcurrDirectory();
             SmallShell::getInstance().setcurrDirectory(*plastPwd);
             SmallShell::getInstance().setLastDirectory(temp);
         }
@@ -224,6 +225,33 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
         }
     }
 }
+void JobsCommand::execute() {
+    this->jobs->removeFinishedJobs();
+    this->jobs->printJobsList();
+}
+
+void JobsList::printJobsList() {
+    if (!this->jobs->empty()) {
+        for (pair<int, JobEntry> curr: *this->jobs) {
+            cout << "[" << curr.first << "] " << curr.second.getCmd() << endl;
+        }
+    }
+}
+
+void JobsList::removeFinishedJobs() {
+    for (auto it = this->jobs->begin(); it != this->jobs->end();) {
+        int status;
+        pid_t result = waitpid(it->second.getPid(), &status, WNOHANG);
+        if (result == -1) {
+            perror("smash error: waitpid failed");
+        } else if (result > 0) {
+            // Job finished
+            it = this->jobs->erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 void ChangeDirCommand:: execute() {
     const char *path = SmallShell::getInstance().getcurrDirectory();
@@ -252,11 +280,57 @@ void SmallShell::setcurrDirectory(char* dir) {
 }
 
 std::vector<std::string> split(const std::string& str, char delimiter) {
-    std::vector<std::string> result;
+    std::vector <std::string> result;
     std::stringstream ss(str);
     std::string token;
     while (std::getline(ss, token, delimiter)) {
         result.push_back(token);
     }
     return result;
+}
+void JobsList::addJob(Command *cmd, bool isStopped) {
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        setpgrp();
+
+        char *args[COMMAND_MAX_ARGS];
+        int numArgs = _parseCommandLine(cmd->getCmd(), args);
+
+        execv(args[0], args);
+        perror("smash error: execv failed");
+        exit(1);
+    } else if (pid > 0) {
+        // Parent process
+        int jobId = this->jobs->empty() ? 1 : this->jobs->rbegin()->first + 1;
+        JobEntry newJob(cmd, isStopped, jobId, pid);
+
+        this->jobs->insert(pair<int, JobEntry>(jobId, newJob));
+    } else {
+        perror("smash error: fork failed");
+    }
+}
+
+void JobsList::removeJobById(int jobId) {
+    if (this->jobs->find(jobId) != this->jobs->end()) {
+        this->jobs->erase(jobId);
+    }
+}
+
+JobsList::JobsList() {
+    this->jobs = new map<int,JobEntry>();
+}
+
+JobsList::~JobsList() {
+    delete this->jobs;
+}
+
+void JobsList::killAllJobs() {
+    for (pair<int, JobEntry> curr: *this->jobs) {
+        if (curr.second.getIsStopped()) {
+            kill(curr.second.getPid(), SIGCONT);
+        }
+        kill(curr.second.getPid(), SIGKILL);
+    }
+    this->jobs->clear();
 }
