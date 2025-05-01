@@ -77,7 +77,9 @@ void _removeBackgroundSign(char *cmd_line) {
 // TODO: Add your implementation for classes in Commands.h 
 
 SmallShell::SmallShell() {
-// TODO: add your implementation
+    prompt = DEFAULT_PROMPT;
+    lastDirectory = nullptr;
+    currDirectory = getcwd(NULL, 0);
 }
 
 SmallShell::~SmallShell() {
@@ -97,6 +99,12 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     }
     else if (firstWord == "showpid"){
         return new ShowPidCommand(cmd_line);
+    }
+    else if (firstWord == "pwd"){
+        return new GetCurrDirCommand(cmd_line);
+    }
+    else if (firstWord == "cd"){
+        return new ChangeDirCommand(cmd_line,&lastDirectory);
     }
     /*
 
@@ -160,4 +168,95 @@ ShowPidCommand:: ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line){
 
 void ShowPidCommand::execute() {
     std::cout << SmallShell::getInstance().getPrompt() << " pid is " << getpid() << std::endl;
+}
+
+GetCurrDirCommand::GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_line){}
+void GetCurrDirCommand::execute() {
+    char* buff = getcwd(NULL, 0);
+    if(buff != NULL){
+        std::cout << buff << std::endl;
+        free(buff);
+    }
+}
+
+ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltInCommand(cmd_line) {
+    string cmd_s = _trim(string(cmd_line));
+    char* args[10];
+    _parseCommandLine(cmd_line, args);
+    if (args[2] != nullptr)//more then one arg
+        std::cerr << "smash error: cd: too many arguments" << std::endl;
+    if (args[1] != nullptr && strcmp(args[1], "-") == 0) {
+        if (plastPwd == nullptr || *plastPwd == nullptr)//dont have last direction
+            std::cerr << "smash error: cd: OLDPWD not set" << std::endl;
+        else {
+            char* temp = SmallShell::getInstance().getcurrDirectory();
+            SmallShell::getInstance().setcurrDirectory(*plastPwd);
+            SmallShell::getInstance().setLastDirectory(temp);
+        }
+    } else {
+        if (args[1] != nullptr && strcmp(args[1], "..") == 0) {
+            char *buff = getcwd(NULL, 0);
+            std::string trimmedPath;
+            if (buff != NULL) {
+                std::string fullPath(buff);
+                std::vector <std::string> parts = split(fullPath, '/');
+
+                if (!parts.empty()) {
+                    parts.pop_back();
+                }
+
+                for (const auto &part: parts) {
+                    if (!part.empty()) {
+                        trimmedPath += "/" + part;
+                    }
+                }
+            }
+
+            if (trimmedPath.empty()) {
+                trimmedPath = "/";
+            }
+            SmallShell::getInstance().setLastDirectory(SmallShell::getInstance().getcurrDirectory());
+            SmallShell::getInstance().setcurrDirectory(strdup(trimmedPath.c_str()));
+        } else {
+            *plastPwd = strdup(SmallShell::getInstance().getcurrDirectory());
+            SmallShell::getInstance().setLastDirectory(SmallShell::getInstance().getcurrDirectory());
+            SmallShell::getInstance().setcurrDirectory(args[1]);
+        }
+    }
+}
+
+void ChangeDirCommand:: execute() {
+    const char *path = SmallShell::getInstance().getcurrDirectory();
+    if (chdir(path) == -1) {
+        std::cerr << "smash error: chdir failed" << std::endl;
+    }
+}
+char* SmallShell::getLastDirectory() {
+    return lastDirectory;
+}
+
+void SmallShell::setLastDirectory(char* dir) {
+    if (lastDirectory) free(lastDirectory);
+    lastDirectory = strdup(dir);
+}
+
+char* SmallShell::getcurrDirectory() {
+    return currDirectory;
+}
+
+void SmallShell::setcurrDirectory(char* dir) {
+    if (currDirectory) {
+        free(currDirectory);
+    }
+    currDirectory = strdup(dir);
+}
+
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> result;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        result.push_back(token);
+    }
+    return result;
 }

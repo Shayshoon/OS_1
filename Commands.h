@@ -8,6 +8,8 @@
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
 
+std::vector<std::string> split(const std::string& str, char delimiter);
+
 class Command {
     // TODO: Add your data members
 public:
@@ -102,6 +104,7 @@ public:
 };
 
 class ChangeDirCommand : public BuiltInCommand {
+    char* newDir;
     // TODO: Add your data members public:
 public:
     ChangeDirCommand(const char *cmd_line, char **plastPwd);
@@ -252,6 +255,8 @@ public:
 class SmallShell {
 private:
     std::string prompt;
+    char* lastDirectory;
+    char* currDirectory;
     SmallShell();
 
 public:
@@ -262,8 +267,6 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
-        instance.prompt = DEFAULT_PROMPT;
-        // Instantiated on first use.
         return instance;
     }
 
@@ -271,6 +274,10 @@ public:
 
     void setPrompt(std::string prompt);
     std::string getPrompt();
+    void setLastDirectory(char* dir);
+    char* getLastDirectory();
+    void setcurrDirectory(char* dir);
+    char* getcurrDirectory();
     void executeCommand(const char *cmd_line);
 
     // TODO: add extra methods as needed
