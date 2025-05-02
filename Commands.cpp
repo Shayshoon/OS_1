@@ -7,6 +7,8 @@
 #include <iomanip>
 #include <deque>
 #include "Commands.h"
+#include <signal.h>
+#include <map>
 
 using namespace std;
 
@@ -113,20 +115,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
 
     }
-    /*
-
-    if (firstWord.compare("pwd") == 0) {
-      return new GetCurrDirCommand(cmd_line);
-    }
-    else if (firstWord.compare("showpid") == 0) {
-      return new ShowPidCommand(cmd_line);
-    }
-    else if ...
-    .....
-    else {
-      return new ExternalCommand(cmd_line);
-    }
-    */
+    else if(firstWord == "kill"){
+            return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
+        }
     return nullptr;
 }
 
@@ -184,7 +175,7 @@ void GetCurrDirCommand::execute() {
 
 ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltInCommand(cmd_line) {
     string cmd_s = _trim(string(cmd_line));
-    char *args[10];
+    char *args[MAXARGS];
     _parseCommandLine(cmd_line, args);
     if (args[2] != nullptr)//more then one arg
         std::cerr << "smash error: cd: too many arguments" << std::endl;
@@ -337,4 +328,46 @@ void JobsList::killAllJobs() {
         kill(curr.second.getPid(), SIGKILL);
     }
     this->jobs->clear();
+}
+
+JobsList *SmallShell::getjobs() {
+    return this->jobs;
+}
+
+JobsList::JobEntry* JobsList::getJobById(int jobId) {
+    auto it = jobs->find(jobId);
+    if (it != jobs->end()) {
+        return &(it->second); // return pointer to the JobEntry stored in the map
+    }
+    return nullptr;
+}
+
+KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line) {
+    char* args[MAXARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    char* end;
+     this->pid = strtoul(args[2], &end, 10);
+    //int signum;
+    if (args[1] != nullptr && args[1][0] == '-') {
+        this->signum = atoi(args[1] + 1);  // Skip the first character (-) and convert to int
+    }
+    if(count != NUMBEROFSIGNALS && *end == '\0') {
+        std::cout << "smash error: kill: invalid arguments" << std::endl;
+        return;
+    }
+    if(this->signum < 1 || this->signum > RANGEOFSIGNALS-1){
+        perror("smash error: kill failed");
+        return;
+    }
+    if(jobs->getJobById(this->pid) == nullptr){
+        std::cout << "smash error: kill: job-id <" << this->pid << "> does not exist" << std::endl;
+        return;
+    }
+    std::cout << "signal number " << this->signum << "was sent to pid " << this->pid << std::endl;
+}
+
+void KillCommand::execute() {
+    JobsList* jobs = SmallShell::getInstance().getjobs();
+    JobsList::JobEntry* job = jobs->getJobById(pid);
+    job->setSignal(signum);
 }
