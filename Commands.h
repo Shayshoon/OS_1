@@ -3,10 +3,15 @@
 #define SMASH_COMMAND_H_
 
 #include <vector>
+#include <map>
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
+#define NUMBEROFSIGNALS 3
+#define RANGEOFSIGNALS 32
+
+std::vector<std::string> split(const std::string& str, char delimiter);
 
 int _parseCommandLine(const char *cmd_line, char **args);
 
@@ -14,9 +19,9 @@ class Command {
     // TODO: Add your data members
     int argsCount;
     char** args;
-    const char* cmd_line;
+    const char *cmd;
 public:
-    Command(const char *cmd_line): cmd_line(cmd_line) {
+    Command(const char *cmd_line): cmd(cmd_line) {
         this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
         if (args == nullptr) {
             perror("smash error: malloc failed");
@@ -35,11 +40,15 @@ public:
     //virtual void prepare();
     //virtual void cleanup();
     // TODO: Add your extra methods if needed
+
+    const char* getCmd() {
+        return this->cmd;
+    }
 };
 
 class BuiltInCommand : public Command {
 public:
-    BuiltInCommand(const char *cmd_line);
+    BuiltInCommand(const char *cmd_line): Command(cmd_line) { }
 
     virtual ~BuiltInCommand() = default;
 };
@@ -164,9 +173,44 @@ class JobsList {
 public:
     class JobEntry {
         // TODO: Add your data members
+        int id;
+        int pid;
+        bool isStopped;
+        Command *cmd;
+        int signals[RANGEOFSIGNALS];
+    public:
+        int getId() const {
+            return this->id;
+        }
+        int getPid() const {
+            return this->pid;
+        }
+        const char* getCmd() const {
+            return this->cmd->getCmd();
+        }
+        bool getIsStopped() {
+            return this->isStopped;
+        }
+
+
+        JobEntry(Command *cmd, bool isStopped, int id, int pid)
+            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
+            std::fill(std::begin(signals), std::end(signals), 0);
+        }
+        void setSignal(int num){
+            signals[num] = 1;
+        }
+
+        ~JobEntry() {
+            delete cmd;
+        }
+
     };
 
     // TODO: Add your data members
+private:
+    std::map<int, JobEntry>* jobs;
+
 public:
     JobsList();
 
@@ -193,8 +237,10 @@ public:
 
 class JobsCommand : public BuiltInCommand {
     // TODO: Add your data members
+    JobsList* jobs;
 public:
-    JobsCommand(const char *cmd_line, JobsList *jobs);
+    JobsCommand(const char *cmd_line, JobsList *jobs)
+            : BuiltInCommand(cmd_line), jobs(jobs) {}
 
     virtual ~JobsCommand() {
     }
@@ -203,6 +249,8 @@ public:
 };
 
 class KillCommand : public BuiltInCommand {
+    int signum;
+    unsigned long pid;
     // TODO: Add your data members
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
@@ -267,6 +315,9 @@ public:
 class SmallShell {
 private:
     std::string prompt;
+    char* lastDirectory;
+    char* currDirectory;
+    JobsList* jobs;
     SmallShell();
 
 public:
@@ -277,7 +328,6 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
-        instance.prompt = DEFAULT_PROMPT;
         // Instantiated on first use.
         return instance;
     }
@@ -286,7 +336,12 @@ public:
 
     void setPrompt(std::string prompt);
     std::string getPrompt();
+    void setLastDirectory(char* dir);
+    char* getLastDirectory();
+    void setcurrDirectory(char* dir);
+    char* getcurrDirectory();
     void executeCommand(const char *cmd_line);
+    JobsList* getjobs();
 
     // TODO: add extra methods as needed
 };
