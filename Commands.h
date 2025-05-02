@@ -8,6 +8,8 @@
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
+#define NUMBEROFSIGNALS 3
+#define RANGEOFSIGNALS 32
 
 std::vector<std::string> split(const std::string& str, char delimiter);
 
@@ -110,7 +112,6 @@ public:
 };
 
 class ChangeDirCommand : public BuiltInCommand {
-    char* newDir;
     // TODO: Add your data members public:
 public:
     ChangeDirCommand(const char *cmd_line, char **plastPwd);
@@ -162,6 +163,7 @@ public:
         int pid;
         bool isStopped;
         Command *cmd;
+        int signals[RANGEOFSIGNALS];
     public:
         int getId() const {
             return this->id;
@@ -176,8 +178,14 @@ public:
             return this->isStopped;
         }
 
+
         JobEntry(Command *cmd, bool isStopped, int id, int pid)
-            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) { }
+            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
+            std::fill(std::begin(signals), std::end(signals), 0);
+        }
+        void setSignal(int num){
+            signals[num] = 1;
+        }
 
         ~JobEntry() {
             delete cmd;
@@ -227,6 +235,8 @@ public:
 };
 
 class KillCommand : public BuiltInCommand {
+    int signum;
+    unsigned long pid;
     // TODO: Add your data members
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
@@ -317,6 +327,7 @@ public:
     void setcurrDirectory(char* dir);
     char* getcurrDirectory();
     void executeCommand(const char *cmd_line);
+    JobsList* getjobs();
 
     // TODO: add extra methods as needed
 };
