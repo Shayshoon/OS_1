@@ -11,8 +11,6 @@
 #define NUMBEROFSIGNALS 3
 #define RANGEOFSIGNALS 32
 
-std::vector<std::string> split(const std::string& str, char delimiter);
-
 int _parseCommandLine(const char *cmd_line, char **args);
 
 class Command {
@@ -138,7 +136,7 @@ public:
 
 class GetCurrDirCommand : public BuiltInCommand {
 public:
-    GetCurrDirCommand(const char *cmd_line);
+    GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_line) { }
 
     virtual ~GetCurrDirCommand() {
     }
@@ -148,7 +146,7 @@ public:
 
 class ShowPidCommand : public BuiltInCommand {
 public:
-    ShowPidCommand(const char *cmd_line);
+    ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line) { }
 
     virtual ~ShowPidCommand() {
     }

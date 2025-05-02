@@ -77,7 +77,19 @@ void _removeBackgroundSign(char *cmd_line) {
     cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> result;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        result.push_back(token);
+    }
+    return result;
+}
+
 // TODO: Add your implementation for classes in Commands.h 
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 SmallShell::SmallShell() {
     lastDirectory = nullptr;
@@ -135,25 +147,31 @@ void SmallShell::executeCommand(const char *cmd_line) {
     // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
 
-ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
-    string cmd_s = _trim(string(cmdLine));
-    int index = (int) cmd_s.find_first_of(WHITESPACE);
-    if (index != -1) {
-        string cmd_args = _trim(cmd_s.substr(index));
-        this->newPrompt = cmd_args.substr(0, cmd_args.find_first_of(WHITESPACE));
-    } else {
-        this->newPrompt = DEFAULT_PROMPT;
+char* SmallShell::getLastDirectory() {
+    return lastDirectory;
+}
+
+void SmallShell::setLastDirectory(char* dir) {
+    if (lastDirectory) free(lastDirectory);
+    lastDirectory = strdup(dir);
+}
+
+char* SmallShell::getcurrDirectory() {
+    return currDirectory;
+}
+
+void SmallShell::setcurrDirectory(char* dir) {
+    if (currDirectory) {
+        free(currDirectory);
     }
+    currDirectory = strdup(dir);
 }
 
-void ChangePromptCommand::execute() {
-    SmallShell::getInstance().setPrompt(this->newPrompt);
+JobsList *SmallShell::getjobs() {
+    return this->jobs;
 }
 
-void JobsCommand::execute() {
-    this->jobs->removeFinishedJobs();
-    this->jobs->printJobsList();
-}
+//%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 void JobsList::printJobsList() {
     if (!this->jobs->empty()) {
@@ -207,14 +225,6 @@ void JobsList::removeJobById(int jobId) {
     }
 }
 
-JobsList::JobsList() {
-    this->jobs = new map<int,JobEntry>();
-}
-
-JobsList::~JobsList() {
-    delete this->jobs;
-}
-
 void JobsList::killAllJobs() {
     for (pair<int, JobEntry> curr: *this->jobs) {
         if (curr.second.getIsStopped()) {
@@ -225,13 +235,43 @@ void JobsList::killAllJobs() {
     this->jobs->clear();
 }
 
-ShowPidCommand:: ShowPidCommand(const char *cmd_line): BuiltInCommand(cmd_line){}
+JobsList::JobEntry* JobsList::getJobById(int jobId) {
+    auto it = jobs->find(jobId);
+    if (it != jobs->end()) {
+        return &(it->second); // return pointer to the JobEntry stored in the map
+    }
+    return nullptr;
+}
+
+JobsList::JobsList() {
+    this->jobs = new map<int,JobEntry>();
+}
+
+JobsList::~JobsList() {
+    delete this->jobs;
+}
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%-commands-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
+    string cmd_s = _trim(string(cmdLine));
+    int index = (int) cmd_s.find_first_of(WHITESPACE);
+    if (index != -1) {
+        string cmd_args = _trim(cmd_s.substr(index));
+        this->newPrompt = cmd_args.substr(0, cmd_args.find_first_of(WHITESPACE));
+    } else {
+        this->newPrompt = DEFAULT_PROMPT;
+    }
+}
+
+void ChangePromptCommand::execute() {
+    SmallShell::getInstance().setPrompt(this->newPrompt);
+}
 
 void ShowPidCommand::execute() {
     std::cout << SmallShell::getInstance().getPrompt() << " pid is " << getpid() << std::endl;
 }
 
-GetCurrDirCommand::GetCurrDirCommand(const char *cmd_line): BuiltInCommand(cmd_line){}
 void GetCurrDirCommand::execute() {
     char* buff = getcwd(NULL, 0);
     if(buff != NULL){
@@ -240,7 +280,8 @@ void GetCurrDirCommand::execute() {
     }
 }
 
-ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltInCommand(cmd_line) {
+ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd)
+    : BuiltInCommand(cmd_line) {
     string cmd_s = _trim(string(cmd_line));
     char* args[COMMAND_MAX_ARGS];
     _parseCommandLine(cmd_line, args);
@@ -260,7 +301,7 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
             std::string trimmedPath;
             if (buff != NULL) {
                 std::string fullPath(buff);
-                std::vector <std::string> parts = split(fullPath, '/');
+                std::vector<std::string> parts = split(fullPath, '/');
 
                 if (!parts.empty()) {
                     parts.pop_back();
@@ -286,52 +327,11 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd):BuiltI
     }
 }
 
-void ChangeDirCommand:: execute() {
+void ChangeDirCommand::execute() {
     const char *path = SmallShell::getInstance().getcurrDirectory();
     if (chdir(path) == -1) {
         perror("smash error: cd failed");
     }
-}
-char* SmallShell::getLastDirectory() {
-    return lastDirectory;
-}
-
-void SmallShell::setLastDirectory(char* dir) {
-    if (lastDirectory) free(lastDirectory);
-    lastDirectory = strdup(dir);
-}
-
-char* SmallShell::getcurrDirectory() {
-    return currDirectory;
-}
-
-void SmallShell::setcurrDirectory(char* dir) {
-    if (currDirectory) {
-        free(currDirectory);
-    }
-    currDirectory = strdup(dir);
-}
-
-std::vector<std::string> split(const std::string& str, char delimiter) {
-    std::vector<std::string> result;
-    std::stringstream ss(str);
-    std::string token;
-    while (std::getline(ss, token, delimiter)) {
-        result.push_back(token);
-    }
-    return result;
-}
-
-JobsList *SmallShell::getjobs() {
-    return this->jobs;
-}
-
-JobsList::JobEntry* JobsList::getJobById(int jobId) {
-    auto it = jobs->find(jobId);
-    if (it != jobs->end()) {
-        return &(it->second); // return pointer to the JobEntry stored in the map
-    }
-    return nullptr;
 }
 
 KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line) {
@@ -362,4 +362,9 @@ void KillCommand::execute() {
     JobsList* jobs = SmallShell::getInstance().getjobs();
     JobsList::JobEntry* job = jobs->getJobById(pid);
     job->setSignal(signum);
+}
+
+void JobsCommand::execute() {
+    this->jobs->removeFinishedJobs();
+    this->jobs->printJobsList();
 }
