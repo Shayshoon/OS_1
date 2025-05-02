@@ -8,12 +8,27 @@
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
 
+int _parseCommandLine(const char *cmd_line, char **args);
+
 class Command {
     // TODO: Add your data members
+    int argsCount;
+    char** args;
+    const char* cmd_line;
 public:
-    Command(const char *cmd_line) {};
+    Command(const char *cmd_line): cmd_line(cmd_line) {
+        this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
+        if (args == nullptr) {
+            perror("smash error: malloc failed");
+            exit(1);
+        }
 
-    virtual ~Command() = default;
+        this->argsCount = _parseCommandLine(cmd_line, args);
+    }
+
+    virtual ~Command() {
+        delete[] args;
+    }
 
     virtual void execute() = 0;
 
