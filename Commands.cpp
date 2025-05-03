@@ -373,6 +373,8 @@ void JobsCommand::execute() {
 
 ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
     this->isBackground = _isBackgroundCommand(this->cmd);
+    this->isComplex = string(this->cmd).find_first_of("?*") != string::npos;
+
     if (this->isBackground) {
         char* str = strdup(cmd_line);
         _removeBackgroundSign(str);
@@ -397,7 +399,16 @@ void ExternalCommand::execute() {
     } else {
         // child process
         setpgrp();
-        execvp(this->args[0], this->args);
+        if (!this->isComplex) {
+            execvp(this->args[0], this->args);
+        } else {
+            char* args[4];
+            args[0] = (char*) "bash";
+            args[1] = (char*) "-c";
+            args[2] = (char*) this->getCmd();
+            args[3] = nullptr;
+            execvp(args[0], args);
+        }
 
         // if execvp fails, it means external command does not exist
         perror("smash error: execvp failed");

@@ -55,6 +55,7 @@ public:
 
 class ExternalCommand : public Command {
     bool isBackground;
+    bool isComplex;
 public:
     ExternalCommand(const char *cmd_line);
 
