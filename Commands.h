@@ -21,11 +21,21 @@ protected:
     const char *cmd;
 public:
     Command(const char *cmd_line): cmd(cmd_line) {
-        this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
+        this->args = (char **) malloc(sizeof(char *) * COMMAND_MAX_ARGS);
         if (args == nullptr) {
             perror("smash error: malloc failed");
             exit(1);
         }
+    }
+#define MAXARGS 32
+
+std::vector<std::string> split(const std::string& str, char delimiter);
+
+class Command {
+    // TODO: Add your data members
+    const char *cmd;
+public:
+    Command(const char *cmd_line): cmd(cmd_line) { }
 
         this->argsCount = _parseCommandLine(cmd_line, args);
     }
@@ -186,11 +196,19 @@ public:
             std::fill(std::begin(signals), std::end(signals), 0);
         }
 
+
+        JobEntry(Command *cmd, bool isStopped, int id, int pid)
+            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
+            std::fill(std::begin(signals), std::end(signals), 0);
+        }
+
         void setSignal(int num){
             signals[num] = 1;
         }
 
+
         ~JobEntry() = default;
+
 
     };
 
@@ -249,7 +267,9 @@ public:
 class KillCommand : public BuiltInCommand {
     int signum;
     unsigned long pid;
+
     // TODO: Add your data members
+
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
 
@@ -326,7 +346,9 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
+
         // Instantiated on first use.
+
         return instance;
     }
 
