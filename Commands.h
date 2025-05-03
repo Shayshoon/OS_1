@@ -4,15 +4,17 @@
 
 #include <vector>
 #include <map>
+#include <cstring>
+#include <cstdlib>
+#include <set>
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
-#define NUMBEROFSIGNALS 3
-#define RANGEOFSIGNALS 32
+#define NUMBEROFSIGNALS (3)
+#define RANGEOFSIGNALS (32)
 
 int _parseCommandLine(const char *cmd_line, char **args);
-
 class Command {
     // TODO: Add your data members
 protected:
@@ -26,35 +28,27 @@ public:
             perror("smash error: malloc failed");
             exit(1);
         }
-    }
-#define MAXARGS 32
-
-std::vector<std::string> split(const std::string& str, char delimiter);
-
-class Command {
-    // TODO: Add your data members
-    const char *cmd;
-public:
-    Command(const char *cmd_line): cmd(cmd_line) { }
 
         this->argsCount = _parseCommandLine(cmd_line, args);
     }
 
     virtual ~Command() {
-//        delete[] cmd;
         delete[] args;
     }
 
     virtual void execute() = 0;
 
-    //virtual void prepare();
-    //virtual void cleanup();
-    // TODO: Add your extra methods if needed
+//virtual void prepare();
+//virtual void cleanup();
+// TODO: Add your extra methods if needed
 
     const char* getCmd() {
         return this->cmd;
     }
 };
+
+std::vector<std::string> split(const std::string& str, char delimiter);
+void parseAliasPattern(const char* input, std::string& name, char*& command);
 
 class BuiltInCommand : public Command {
 public:
@@ -196,12 +190,6 @@ public:
             std::fill(std::begin(signals), std::end(signals), 0);
         }
 
-
-        JobEntry(Command *cmd, bool isStopped, int id, int pid)
-            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
-            std::fill(std::begin(signals), std::end(signals), 0);
-        }
-
         void setSignal(int num){
             signals[num] = 1;
         }
@@ -291,6 +279,9 @@ public:
 };
 
 class AliasCommand : public BuiltInCommand {
+    std::string name;
+    char* name_command;
+    int print;
 public:
     AliasCommand(const char *cmd_line);
 
@@ -330,12 +321,42 @@ public:
     void execute() override;
 };
 
+class AliasMap{
+private:
+    std::map<std::string , char*> myAlias;
+    const std::set<std::string> shell_keywords = {
+            "if", "then", "else", "elif", "fi",
+            "for", "while", "until", "do", "done",
+            "case", "esac", "in", "function", "select",
+            "time", "!", "[[", "]]", "{", "}",
+            "break", "continue", "return", "exit" ,
+            "quit" , "lisdir"
+    };
+public:
+    AliasMap(AliasMap const &) = delete;
+    void operator=(AliasMap const &) = delete;
+    AliasMap() = default;
+    ~AliasMap(){
+        for (auto& pair : myAlias) {
+            free(pair.second);
+        }
+    }
+    int addAlias(const std::string& name , const char* command);
+    int removeAlias(const std::string& name);
+    const char* getAlias(const std::string& name) const ;
+    void print();
+    const std::set<std::string>& getShellKeywords() const {
+        return shell_keywords;
+    }
+};
+
 class SmallShell {
 private:
     std::string prompt;
     char* lastDirectory;
     char* currDirectory;
     JobsList* jobs;
+    AliasMap* aliases;
     SmallShell();
 
 public:
@@ -362,6 +383,7 @@ public:
     char* getcurrDirectory();
     void executeCommand(const char *cmd_line);
     JobsList* getjobs();
+    AliasMap* getAliasMap();
 
     // TODO: add extra methods as needed
 };

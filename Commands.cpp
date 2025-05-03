@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <map>
 #include <regex>
+#include <cstring>
 
 using namespace std;
 
@@ -89,6 +90,28 @@ std::vector<std::string> split(const std::string& str, char delimiter) {
     return result;
 }
 
+void parseAliasPattern(const char* input, std::string& name, char*& command) {
+    std::string line(input);
+
+    size_t eq_pos = line.find('=');
+    if (eq_pos == std::string::npos) {
+        throw std::invalid_argument("Missing '=' in alias");
+    }
+
+    // Extract the name (before '=')
+    name = line.substr(0, eq_pos);
+
+    // Extract the command (after '='), strip quotes
+    std::string cmd = line.substr(eq_pos + 1);
+    if (cmd.size() < 2 || cmd.front() != '\'' || cmd.back() != '\'') {
+        throw std::invalid_argument("Command must be enclosed in single quotes");
+    }
+
+    // Remove the surrounding quotes and convert the command to char*
+    std::string command_str = cmd.substr(1, cmd.size() - 2); // Strip the quotes
+    command = strdup(command_str.c_str()); // Allocate char* memory
+}
+
 // TODO: Add your implementation for classes in Commands.h 
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -98,11 +121,13 @@ SmallShell::SmallShell() {
     currDirectory = getcwd(NULL, 0);
     this->prompt = DEFAULT_PROMPT;
     this->jobs = new JobsList();
+    this->aliases = new AliasMap();
 }
 
 SmallShell::~SmallShell() {
 // TODO: add your implementation
     delete this->jobs;
+    delete this->aliases;
 }
 
 /**
@@ -178,6 +203,10 @@ JobsList *SmallShell::getjobs() {
     return this->jobs;
 }
 
+AliasMap* SmallShell::getAliasMap() {
+    return  this->aliases;
+}
+
 //%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 void JobsList::printJobsList() {
@@ -251,6 +280,40 @@ JobsList::JobsList() {
 
 JobsList::~JobsList() {
     delete this->jobs;
+}
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%%-Alias-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+int AliasMap::addAlias(const std::string &name, const char *command) {
+    if (myAlias.count(name)) {
+        return 0;
+    }
+    myAlias[name] = strdup(command);
+    return 1;
+}
+
+int AliasMap::removeAlias(const std::string &name) {
+    auto it = myAlias.find(name);
+    if (it != myAlias.end()) {
+        free(it->second);
+        myAlias.erase(it);
+        return 0;
+    }
+    return 1;
+}
+
+const char *AliasMap::getAlias(const std::string &name) const {
+    auto it = myAlias.find(name);
+    if (it != myAlias.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void AliasMap::print() {
+    for(const auto& pair: myAlias){
+        std::cout << pair.first << "='" << pair.second << "'" << std::endl;
+    }
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-commands-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -404,19 +467,41 @@ void ExternalCommand::execute() {
     }
 }
 
-AliasCommand ::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
-    std::regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
-    if (std::regex_match(str(cmd_line), pattern)){
-
-    }
-    else{
-        std::cout << "smash error: alias: invalid alias format" << std::endl;
+AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    this->print = 0;
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    if(std::string(args[0]) == "alias") {
+        if(args[1] == nullptr){
+            this->print = 1;
+        }
+        else {
+            std::regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
+            if (std::regex_match(string(cmd_line), pattern)) {
+                parseAliasPattern(args[1], this->name, this->name_command);
+                AliasMap* alias = SmallShell::getInstance().getAliasMap();
+                if(alias->getAlias(this->name) != nullptr || alias->getShellKeywords().count(this->cmd)) {
+                    std::cout << "smash error: alias: " << name << " already exists or is a reserved command"
+                              << std::endl;
+                    return;
+                }
+            } else {
+                std::cout << "smash error: alias: invalid alias format" << std::endl;
+                return;
+            }
+        }
     }
 
 
 }
 
 void AliasCommand::execute() {
-
+    AliasMap* alias = SmallShell::getInstance().getAliasMap();
+    if(this->print == 1){
+        alias->print();
+    } else{
+        if(!alias->addAlias(this->name , this->cmd))
+            std::cout << "can not add" << std::endl;
+    }
 }
 
