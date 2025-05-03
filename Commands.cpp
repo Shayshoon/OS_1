@@ -9,6 +9,7 @@
 #include "Commands.h"
 #include <signal.h>
 #include <map>
+#include <algorithm>
 
 using namespace std;
 
@@ -77,6 +78,15 @@ void _removeBackgroundSign(char *cmd_line) {
     cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+bool _isNumber(char* s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        if (!isdigit(s[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<std::string> split(const std::string& str, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(str);
@@ -121,6 +131,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new GetCurrDirCommand(cmd_line);
     } else if (firstWord == "quit") {
         return new QuitCommand(cmd_line, this->getjobs());
+    } else if (firstWord == "fg") {
+        return new ForegroundCommand(cmd_line, this->getjobs());
     } else if (firstWord == "cd") {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
     } else if (firstWord == "kill") {
@@ -431,4 +443,47 @@ void QuitCommand::execute() {
         SmallShell::getInstance().getjobs()->killAllJobs();
     }
     exit(0);
+}
+
+void ForegroundCommand::execute() {
+    JobsList::JobEntry* job = this->jobs->getJobById(this->jobId);
+
+    if (job->getIsStopped()) {
+        kill(job->getPid(), SIGCONT);
+        job->setIsStopped(false);
+    }
+
+    cout << job->getCmd() << " " << job->getPid() << endl;
+
+    if (waitpid(job->getPid(), nullptr, 0) == -1) {
+        perror("smash error: waitpid failed");
+    }
+
+    this->jobs->removeJobById(this->jobId);
+}
+
+ForegroundCommand::ForegroundCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line), jobs(jobs) {
+    if (this->argsCount > 2) {
+        cerr << "smash error: fg: invalid arguments" <<  endl;
+        return;
+    } if (this->argsCount == 2) {
+        if (!_isNumber(this->args[1])) {
+            cerr << "smash error: fg: invalid arguments" <<  endl;
+            return;
+        }
+
+        this->jobId = atoi(this->args[1]);
+        if (this->jobs->getJobById(this->jobId) == nullptr) {
+            cerr << "smash error: fg: job-id " << this->jobId << " does not exist" << endl;
+            return;
+        }
+    } else {
+        if (this->jobs->getJobs()->empty()) {
+            cerr << "smash error: fg: jobs list is empty" << endl;
+            return;
+        }
+
+        this->jobId = this->jobs->getJobs()->rbegin()->first;
+    }
+
 }

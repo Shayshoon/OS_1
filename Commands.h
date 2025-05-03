@@ -195,6 +195,9 @@ public:
 
         ~JobEntry() = default;
 
+        void setIsStopped(bool b) {
+            this->isStopped = b;
+        }
     };
 
     // TODO: Add your data members
@@ -270,11 +273,12 @@ public:
 
 class ForegroundCommand : public BuiltInCommand {
     // TODO: Add your data members
+    JobsList* jobs;
+    int jobId;
 public:
     ForegroundCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~ForegroundCommand() {
-    }
+    virtual ~ForegroundCommand() = default;
 
     void execute() override;
 };
