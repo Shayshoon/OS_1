@@ -238,7 +238,6 @@ public:
 class KillCommand : public BuiltInCommand {
     int signum;
     unsigned long pid;
-    // TODO: Add your data members
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
 

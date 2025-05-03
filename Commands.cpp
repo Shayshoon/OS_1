@@ -9,6 +9,7 @@
 #include "Commands.h"
 #include <signal.h>
 #include <map>
+#include <regex>
 
 using namespace std;
 
@@ -118,6 +119,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     else if(firstWord == "kill"){
             return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
         }
+    else if(firstWord == "alias"){
+        return new AliasCommand(cmd_line);
+    }
     return nullptr;
 }
 
@@ -370,4 +374,20 @@ void KillCommand::execute() {
     JobsList* jobs = SmallShell::getInstance().getjobs();
     JobsList::JobEntry* job = jobs->getJobById(pid);
     job->setSignal(signum);
+}
+
+AliasCommand ::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    std::regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
+    if (std::regex_match(str(cmd_line), pattern)){
+
+    }
+    else{
+        std::cout << "smash error: alias: invalid alias format" << std::endl;
+    }
+
+
+}
+
+void AliasCommand::execute() {
+
 }
