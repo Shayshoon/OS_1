@@ -286,12 +286,17 @@ public:
     AliasCommand(const char *cmd_line);
 
     virtual ~AliasCommand() {
+        if (name_command) {
+            free(name_command);
+            name_command = nullptr;
+        }
     }
 
     void execute() override;
 };
 
 class UnAliasCommand : public BuiltInCommand {
+    std::vector<std::string name> unAlias;
 public:
     UnAliasCommand(const char *cmd_line);
 
@@ -323,14 +328,11 @@ public:
 
 class AliasMap{
 private:
-    std::map<std::string , char*> myAlias;
+    std::vector<std::pair<std::string, char*>> myAlias;
     const std::set<std::string> shell_keywords = {
-            "if", "then", "else", "elif", "fi",
-            "for", "while", "until", "do", "done",
-            "case", "esac", "in", "function", "select",
-            "time", "!", "[[", "]]", "{", "}",
-            "break", "continue", "return", "exit" ,
-            "quit" , "lisdir"
+            "chprompt", "showpid", "pwd", "cd", "jobs",
+            "fg", "quit", "lisdir", "kill", "alias",
+            "unalias", "unsetenv", "du", "whoami", "netinfo"
     };
 public:
     AliasMap(AliasMap const &) = delete;

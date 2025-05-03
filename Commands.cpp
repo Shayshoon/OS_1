@@ -103,9 +103,6 @@ void parseAliasPattern(const char* input, std::string& name, char*& command) {
 
     // Extract the command (after '='), strip quotes
     std::string cmd = line.substr(eq_pos + 1);
-    if (cmd.size() < 2 || cmd.front() != '\'' || cmd.back() != '\'') {
-        throw std::invalid_argument("Command must be enclosed in single quotes");
-    }
 
     // Remove the surrounding quotes and convert the command to char*
     std::string command_str = cmd.substr(1, cmd.size() - 2); // Strip the quotes
@@ -137,6 +134,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     // For example:
     string cmd_s = _trim(string(cmd_line));
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
+    std::cout <<"first " << string(firstWord) << std::endl;
+    AliasMap* aliases = SmallShell::getAliasMap();
+    const char* thisAlias = aliases->getAlias(firstWord);
 
     if (firstWord == "chprompt") {
         return new ChangePromptCommand(cmd_line);
@@ -150,8 +150,16 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
     } else if (firstWord == "kill"){
         return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
-    } else if (false) { // TODO: check for alias
-    } else {
+    } else if (firstWord == "alias"){
+        return new AliasCommand(cmd_line);
+    }else if(firstWord == "unalias"){
+        return new UnAliasCommand(cmd_line);
+    }
+    else if(thisAlias != nullptr){
+        std::cout <<"should create " << string(thisAlias) << std::endl;
+        return SmallShell::CreateCommand(thisAlias);
+        }
+    else{
         return new ExternalCommand(cmd_line);
     }
 
@@ -285,27 +293,29 @@ JobsList::~JobsList() {
 //%%%%%%%%%%%%%%%%%%%%%%%%%%-Alias-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 int AliasMap::addAlias(const std::string &name, const char *command) {
-    if (myAlias.count(name)) {
-        return 0;
-    }
-    myAlias[name] = strdup(command);
+    for(auto& pair:myAlias)
+        if(pair.first == name)
+            return 0;
+    myAlias.emplace_back(name, strdup(command));
     return 1;
 }
 
 int AliasMap::removeAlias(const std::string &name) {
-    auto it = myAlias.find(name);
-    if (it != myAlias.end()) {
-        free(it->second);
-        myAlias.erase(it);
-        return 0;
+   for (auto it = myAlias.begin(); it != myAlias.end(); ++it) {
+        if (it->first == name) {
+            free(it->second);
+            myAlias.erase(it);
+            return 1;
+        }
     }
-    return 1;
+    return 0;
 }
 
 const char *AliasMap::getAlias(const std::string &name) const {
-    auto it = myAlias.find(name);
-    if (it != myAlias.end()) {
-        return it->second;
+    for (const auto& pair : myAlias) {
+        if (pair.first == name) {
+            return pair.second;
+        }
     }
     return nullptr;
 }
@@ -469,6 +479,7 @@ void ExternalCommand::execute() {
 
 AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
     this->print = 0;
+    this->name_command = nullptr;
     char* args[COMMAND_MAX_ARGS];
     int count = _parseCommandLine(cmd_line ,args);
     if(std::string(args[0]) == "alias") {
@@ -480,7 +491,7 @@ AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
             if (std::regex_match(string(cmd_line), pattern)) {
                 parseAliasPattern(args[1], this->name, this->name_command);
                 AliasMap* alias = SmallShell::getInstance().getAliasMap();
-                if(alias->getAlias(this->name) != nullptr || alias->getShellKeywords().count(this->cmd)) {
+                if(alias->getAlias(this->name) != nullptr || alias->getShellKeywords().count(this->name)) {
                     std::cout << "smash error: alias: " << name << " already exists or is a reserved command"
                               << std::endl;
                     return;
@@ -500,8 +511,33 @@ void AliasCommand::execute() {
     if(this->print == 1){
         alias->print();
     } else{
-        if(!alias->addAlias(this->name , this->cmd))
+        if(!alias->addAlias(this->name , this->name_command))
             std::cout << "can not add" << std::endl;
+        
+    }
+}
+
+UnAliasCommand::UnAliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    AliasMap* aliases = SmallShell::getInstance().getAliasMap();
+    if(args[1] == nullptr){
+        std::cout << "smash error: unalias: not enough arguments" << std::endl;
+        return;
+    }
+    for(int i=1 ; i<count ; i++){
+        if(aliases->getAlias(string(args[i])) == nullptr){
+            std::cout << "smash error: unalias: <" << string(args[i]) << "> alias does not exist" << std::endl;
+            return;
+        }
+        unAlias.push_back(std::string(args[i]));
+    }
+}
+
+void UnAliasCommand::execute() {
+    AliasMap* aliases = SmallShell::getInstance().getAliasMap();
+    for (const std::string& name : unAlias){
+        aliases->removeAlias(name);
     }
 }
 
