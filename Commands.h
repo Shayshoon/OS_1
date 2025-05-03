@@ -15,6 +15,7 @@ int _parseCommandLine(const char *cmd_line, char **args);
 
 class Command {
     // TODO: Add your data members
+protected:
     int argsCount;
     char** args;
     const char *cmd;
@@ -30,6 +31,7 @@ public:
     }
 
     virtual ~Command() {
+//        delete[] cmd;
         delete[] args;
     }
 
@@ -52,6 +54,7 @@ public:
 };
 
 class ExternalCommand : public Command {
+    bool isBackground;
 public:
     ExternalCommand(const char *cmd_line);
 
@@ -154,19 +157,6 @@ public:
     void execute() override;
 };
 
-class JobsList;
-
-class QuitCommand : public BuiltInCommand {
-    // TODO: Add your data members public:
-    QuitCommand(const char *cmd_line, JobsList *jobs);
-
-    virtual ~QuitCommand() {
-    }
-
-    void execute() override;
-};
-
-
 class JobsList {
 public:
     class JobEntry {
@@ -176,6 +166,7 @@ public:
         bool isStopped;
         Command *cmd;
         int signals[RANGEOFSIGNALS];
+
     public:
         int getId() const {
             return this->id;
@@ -190,18 +181,16 @@ public:
             return this->isStopped;
         }
 
-
         JobEntry(Command *cmd, bool isStopped, int id, int pid)
-            : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
+                : id(id) ,pid(pid), isStopped(isStopped), cmd(cmd) {
             std::fill(std::begin(signals), std::end(signals), 0);
         }
+
         void setSignal(int num){
             signals[num] = 1;
         }
 
-        ~JobEntry() {
-            delete cmd;
-        }
+        ~JobEntry() = default;
 
     };
 
@@ -214,7 +203,7 @@ public:
 
     ~JobsList();
 
-    void addJob(Command *cmd, bool isStopped = false);
+    void addJob(Command *cmd, pid_t pid, bool isStopped = false);
 
     void printJobsList();
 
@@ -231,6 +220,17 @@ public:
     JobEntry *getLastStoppedJob(int *jobId);
 
     // TODO: Add extra methods or modify exisitng ones as needed
+    void addJob(Command *cmd, bool isStopped, pid_t pid);
+};
+
+class QuitCommand : public BuiltInCommand {
+    // TODO: Add your data members public:
+    QuitCommand(const char *cmd_line, JobsList *jobs);
+
+    virtual ~QuitCommand() {
+    }
+
+    void execute() override;
 };
 
 class JobsCommand : public BuiltInCommand {

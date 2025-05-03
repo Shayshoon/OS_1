@@ -54,7 +54,7 @@ int _parseCommandLine(const char *cmd_line, char **args) {
     FUNC_EXIT()
 }
 
-bool _isBackgroundComamnd(const char *cmd_line) {
+bool _isBackgroundCommand(const char *cmd_line) {
     const string str(cmd_line);
     return str[str.find_last_not_of(WHITESPACE)] == '&';
 }
@@ -121,9 +121,13 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new GetCurrDirCommand(cmd_line);
     } else if (firstWord == "cd"){
         return new ChangeDirCommand(cmd_line,&lastDirectory);
-    } else if(firstWord == "kill"){
-            return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
-        }
+    } else if (firstWord == "kill"){
+        return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
+    } else if (false) { // TODO: check for alias
+    } else {
+        return new ExternalCommand(cmd_line);
+    }
+
     return nullptr;
 }
 
@@ -141,6 +145,7 @@ void SmallShell::executeCommand(const char *cmd_line) {
     // for example:
     Command* cmd = CreateCommand(cmd_line);
     if (cmd != nullptr) {
+        this->getjobs()->removeFinishedJobs();
         cmd->execute();
     }
 
@@ -185,6 +190,7 @@ void JobsList::removeFinishedJobs() {
     for (auto it = this->jobs->begin(); it != this->jobs->end();) {
         int status;
         pid_t result = waitpid(it->second.getPid(), &status, WNOHANG);
+
         if (result == -1) {
             perror("smash error: waitpid failed");
         } else if (result > 0) {
@@ -196,27 +202,13 @@ void JobsList::removeFinishedJobs() {
     }
 }
 
-void JobsList::addJob(Command *cmd, bool isStopped) {
-    pid_t pid = fork();
+void JobsList::addJob(Command *cmd, pid_t pid, bool isStopped) {
+    this->removeFinishedJobs();
 
-    if (pid == 0) {
-        setpgrp();
+    int jobId = this->jobs->empty() ? 1 : this->jobs->rbegin()->first + 1;
+    JobEntry newJob(cmd, isStopped, jobId, pid);
 
-        char *args[COMMAND_MAX_ARGS];
-        int numArgs = _parseCommandLine(cmd->getCmd(), args);
-
-        execv(args[0], args);
-        perror("smash error: execv failed");
-        exit(1);
-    } else if (pid > 0) {
-        // Parent process
-        int jobId = this->jobs->empty() ? 1 : this->jobs->rbegin()->first + 1;
-        JobEntry newJob(cmd, isStopped, jobId, pid);
-
-        this->jobs->insert(pair<int, JobEntry>(jobId, newJob));
-    } else {
-        perror("smash error: fork failed");
-    }
+    this->jobs->insert(pair<int, JobEntry>(jobId, newJob));
 }
 
 void JobsList::removeJobById(int jobId) {
@@ -240,6 +232,14 @@ JobsList::JobEntry* JobsList::getJobById(int jobId) {
     if (it != jobs->end()) {
         return &(it->second); // return pointer to the JobEntry stored in the map
     }
+    return nullptr;
+}
+
+JobsList::JobEntry *JobsList::getLastJob(int *lastJobId) {
+    return nullptr;
+}
+
+JobsList::JobEntry *JobsList::getLastStoppedJob(int *jobId) {
     return nullptr;
 }
 
@@ -367,4 +367,37 @@ void KillCommand::execute() {
 void JobsCommand::execute() {
     this->jobs->removeFinishedJobs();
     this->jobs->printJobsList();
+}
+
+ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
+    this->isBackground = _isBackgroundCommand(this->cmd);
+    if (this->isBackground) {
+        char* str = strdup(cmd_line);
+        _removeBackgroundSign(str);
+        this->cmd = str;
+        this->argsCount = _parseCommandLine(this->cmd, this->args);
+    }
+}
+
+void ExternalCommand::execute() {
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("smash error: fork failed");
+    } else if (pid > 0) {
+        // parent process
+        if (this->isBackground) {
+            SmallShell::getInstance().getjobs()->addJob(this, pid, false);
+        } else if (waitpid(pid, nullptr, 0) == -1) {
+            perror("smash error: waitpid failed");
+        }
+    } else {
+        // child process
+        setpgrp();
+        execvp(this->args[0], this->args);
+
+        // if execvp fails, it means external command does not exist
+        perror("smash error: execvp failed");
+        exit(1);
+    }
 }
