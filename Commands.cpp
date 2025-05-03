@@ -117,11 +117,13 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new JobsCommand(cmd_line, this->jobs);
     } else if (firstWord == "showpid"){
         return new ShowPidCommand(cmd_line);
-    } else if (firstWord == "pwd"){
+    } else if (firstWord == "pwd") {
         return new GetCurrDirCommand(cmd_line);
-    } else if (firstWord == "cd"){
+    } else if (firstWord == "quit") {
+        return new QuitCommand(cmd_line, this->getjobs());
+    } else if (firstWord == "cd") {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
-    } else if (firstWord == "kill"){
+    } else if (firstWord == "kill") {
         return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
     } else if (false) { // TODO: check for alias
     } else {
@@ -374,8 +376,9 @@ ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
     if (this->isBackground) {
         char* str = strdup(cmd_line);
         _removeBackgroundSign(str);
-        this->cmd = str;
-        this->argsCount = _parseCommandLine(this->cmd, this->args);
+        this->cmd = strdup(cmd_line);
+        this->argsCount = _parseCommandLine(str, this->args);
+        delete[] str;
     }
 }
 
@@ -400,4 +403,21 @@ void ExternalCommand::execute() {
         perror("smash error: execvp failed");
         exit(1);
     }
+}
+
+QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line) {
+    this->kill = this->argsCount > 1 && strcmp(this->args[1], "kill") == 0;
+    this->jobs = jobs;
+}
+
+void QuitCommand::execute() {
+    if (this->kill) {
+        cout << "smash: sending SIGKILL signal to "
+            << this->jobs->getJobs()->size() << " jobs:" << endl;
+        for (std::pair<const int, JobsList::JobEntry> job: *this->jobs->getJobs()) {
+            cout << job.second.getPid() << ": " << job.second.getCmd() << endl;
+        }
+        SmallShell::getInstance().getjobs()->killAllJobs();
+    }
+    exit(0);
 }

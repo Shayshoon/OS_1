@@ -58,7 +58,9 @@ class ExternalCommand : public Command {
 public:
     ExternalCommand(const char *cmd_line);
 
-    virtual ~ExternalCommand() = default;
+    virtual ~ExternalCommand() {
+        delete[] this->cmd;
+    }
 
     void execute() override;
 };
@@ -203,6 +205,10 @@ public:
 
     ~JobsList();
 
+    std::map<int, JobEntry>* getJobs() {
+        return this->jobs;
+    }
+
     void addJob(Command *cmd, pid_t pid, bool isStopped = false);
 
     void printJobsList();
@@ -224,11 +230,13 @@ public:
 };
 
 class QuitCommand : public BuiltInCommand {
+    bool kill;
+    JobsList* jobs;
+public:
     // TODO: Add your data members public:
     QuitCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~QuitCommand() {
-    }
+    virtual ~QuitCommand() = default;
 
     void execute() override;
 };
