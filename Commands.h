@@ -304,13 +304,15 @@ public:
 };
 
 class UnSetEnvCommand : public BuiltInCommand {
+    std::vector<std::string> envVariables;
 public:
     UnSetEnvCommand(const char *cmd_line);
 
-    virtual ~UnSetEnvCommand() {
-    }
+    virtual ~UnSetEnvCommand() = default;
 
     void execute() override;
+
+    bool doesEnvVarExist(const char *var);
 };
 
 class WatchProcCommand : public BuiltInCommand {
