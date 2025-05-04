@@ -292,16 +292,19 @@ public:
         }
     }
 
+    void createAlias(char* cmd);
+
     void execute() override;
 };
 
 class UnAliasCommand : public BuiltInCommand {
-    std::vector<std::string name> unAlias;
+    std::vector<std::string > unAlias;
 public:
     UnAliasCommand(const char *cmd_line);
 
     virtual ~UnAliasCommand() {
     }
+
 
     void execute() override;
 };

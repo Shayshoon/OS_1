@@ -134,7 +134,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     // For example:
     string cmd_s = _trim(string(cmd_line));
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
-    std::cout <<"first " << string(firstWord) << std::endl;
     AliasMap* aliases = SmallShell::getAliasMap();
     const char* thisAlias = aliases->getAlias(firstWord);
 
@@ -156,7 +155,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new UnAliasCommand(cmd_line);
     }
     else if(thisAlias != nullptr){
-        std::cout <<"should create " << string(thisAlias) << std::endl;
         return SmallShell::CreateCommand(thisAlias);
         }
     else{
@@ -513,8 +511,11 @@ void AliasCommand::execute() {
     } else{
         if(!alias->addAlias(this->name , this->name_command))
             std::cout << "can not add" << std::endl;
-        
     }
+}
+
+void AliasCommand::createAlias(char *cmd) {
+    SmallShell::getInstance().CreateCommand(cmd);
 }
 
 UnAliasCommand::UnAliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
