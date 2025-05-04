@@ -12,6 +12,7 @@
 #include <map>
 #include <regex>
 #include <cstring>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -95,7 +96,7 @@ void parseAliasPattern(const char* input, std::string& name, char*& command) {
 
     size_t eq_pos = line.find('=');
     if (eq_pos == std::string::npos) {
-        throw std::invalid_argument("Missing '=' in alias");
+        cout << "invalid pattern parseAliasPatrern" << endl;
     }
 
     // Extract the name (before '=')
@@ -107,6 +108,32 @@ void parseAliasPattern(const char* input, std::string& name, char*& command) {
     // Remove the surrounding quotes and convert the command to char*
     std::string command_str = cmd.substr(1, cmd.size() - 2); // Strip the quotes
     command = strdup(command_str.c_str()); // Allocate char* memory
+}
+
+bool isInteger(const char* number) {
+    if (number == nullptr) return false;
+    for (int i = 0; number[i]; ++i) {
+        if (!isdigit(number[i]))
+            return false;
+    }
+    return true;
+}
+
+string readFile(const string& path) {
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return "";
+    }
+
+    char buf[4096];
+    ssize_t bytes = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (bytes < 0) {
+        return "";
+    }
+
+    buf[bytes] = '\0';
+    return string(buf);
 }
 
 // TODO: Add your implementation for classes in Commands.h 
@@ -153,6 +180,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(cmd_line);
     }else if(firstWord == "unalias"){
         return new UnAliasCommand(cmd_line);
+    }else if(firstWord == "watchproc"){
+        return new WatchProcCommand(cmd_line);
     }
     else if(thisAlias != nullptr){
         return SmallShell::CreateCommand(thisAlias);
@@ -301,7 +330,7 @@ int AliasMap::addAlias(const std::string &name, const char *command) {
 int AliasMap::removeAlias(const std::string &name) {
    for (auto it = myAlias.begin(); it != myAlias.end(); ++it) {
         if (it->first == name) {
-            free(it->second);
+            delete(it->second);
             myAlias.erase(it);
             return 1;
         }
@@ -432,9 +461,10 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(c
 }
 
 void KillCommand::execute() {
-    JobsList* jobs = SmallShell::getInstance().getjobs();
+   /* JobsList* jobs = SmallShell::getInstance().getjobs();
     JobsList::JobEntry* job = jobs->getJobById(pid);
-    job->setSignal(signum);
+    job->setSignal(signum);*/
+    kill(pid , signum);
 }
 
 void JobsCommand::execute() {
@@ -476,13 +506,13 @@ void ExternalCommand::execute() {
 }
 
 AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
-    this->print = 0;
+    this->shouldPrint = 0;
     this->name_command = nullptr;
     char* args[COMMAND_MAX_ARGS];
-    int count = _parseCommandLine(cmd_line ,args);
+   // int count = _parseCommandLine(cmd_line ,args);
     if(std::string(args[0]) == "alias") {
         if(args[1] == nullptr){
-            this->print = 1;
+            this->shouldPrint = 1;
         }
         else {
             std::regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
@@ -506,7 +536,7 @@ AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
 
 void AliasCommand::execute() {
     AliasMap* alias = SmallShell::getInstance().getAliasMap();
-    if(this->print == 1){
+    if(this->shouldPrint == 1){
         alias->print();
     } else{
         if(!alias->addAlias(this->name , this->name_command))
@@ -540,5 +570,65 @@ void UnAliasCommand::execute() {
     for (const std::string& name : unAlias){
         aliases->removeAlias(name);
     }
+}
+
+WatchProcCommand::WatchProcCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    this->cpuUsage = 0;
+    this->memoryUsage = "";
+    this->pidProcess = 0;
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    JobsList* jobs = SmallShell::getInstance().getjobs();
+    if(count != 2 || !(isInteger(args[1]))){
+        cout << "smash error: watchproc: invalid arguments" << endl;
+        return;
+    }
+    if(jobs->getJobById(atoi(args[1])) == nullptr){
+        cout << "smash error: watchproc: pid <" << args[1] << "> does not exist" << endl;
+        return;
+    }
+    string stat_path = "/proc/" + std::to_string(atoi(args[1])) + "/stat";
+
+    string stat_content = readFile(stat_path);
+    if(stat_content.empty()){
+        cout << "no info in the path" << endl;
+        return;
+    }
+    auto tokens = split(stat_content, ' ');
+    if(tokens.size() < MINIMUM_FOR_CALCULATE_CPUUSAGE){
+        cout << "cant calculate the cpu usage" << endl;
+    }
+    long utime = stol(tokens[UTIME]);
+    long stime = stol(tokens[STIME]);
+    long starttime = stol(tokens[STARTTIME]);
+
+    long clk_tck = sysconf(_SC_CLK_TCK);
+
+    string uptime_content = readFile("/proc/uptime");
+    double uptime = stod(uptime_content);
+
+    double seconds = uptime - (starttime / (double)clk_tck);
+    double cpu_usage = 100.0 * ((utime + stime) / (double)clk_tck) / seconds;
+
+    string status_path = "/proc/" +std::to_string(atoi(args[1])) + "/status";
+
+    string status_content = readFile(status_path);
+    istringstream iss(status_content); //for read line by line
+    string line, mem_line;
+    while (std::getline(iss, line)) {
+        if (line.find("VmRSS:") == 0) {
+            mem_line = line;
+            break;
+        }
+    }
+    if(!mem_line.empty())
+        this->memoryUsage = mem_line;
+    this->cpuUsage = cpu_usage;
+    this->pidProcess = args[1];
+}
+
+void WatchProcCommand::execute() {
+    cout << "PID:" << this->pidProcess << " | CPU Usage: " << this->cpuUsage << " | Memory Usage: " << this->memoryUsage << endl;
+
 }
 

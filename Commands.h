@@ -13,6 +13,10 @@
 #define DEFAULT_PROMPT "smash"
 #define NUMBEROFSIGNALS (3)
 #define RANGEOFSIGNALS (32)
+#define MINIMUM_FOR_CALCULATE_CPUUSAGE (22)
+#define UTIME (13)
+#define STIME (14)
+#define STARTTIME (21)
 
 int _parseCommandLine(const char *cmd_line, char **args);
 class Command {
@@ -49,6 +53,8 @@ public:
 
 std::vector<std::string> split(const std::string& str, char delimiter);
 void parseAliasPattern(const char* input, std::string& name, char*& command);
+bool isInteger(const char* number);
+std::string readFile(const std::string& path);
 
 class BuiltInCommand : public Command {
 public:
@@ -281,13 +287,13 @@ public:
 class AliasCommand : public BuiltInCommand {
     std::string name;
     char* name_command;
-    int print;
+    int shouldPrint;
 public:
     AliasCommand(const char *cmd_line);
 
     virtual ~AliasCommand() {
         if (name_command) {
-            free(name_command);
+            delete(name_command);
             name_command = nullptr;
         }
     }
@@ -320,6 +326,9 @@ public:
 };
 
 class WatchProcCommand : public BuiltInCommand {
+    double cpuUsage;
+    std::string memoryUsage;
+    char* pidProcess;
 public:
     WatchProcCommand(const char *cmd_line);
 
@@ -336,6 +345,7 @@ private:
             "chprompt", "showpid", "pwd", "cd", "jobs",
             "fg", "quit", "lisdir", "kill", "alias",
             "unalias", "unsetenv", "du", "whoami", "netinfo"
+            , "watchproc"
     };
 public:
     AliasMap(AliasMap const &) = delete;
@@ -343,7 +353,7 @@ public:
     AliasMap() = default;
     ~AliasMap(){
         for (auto& pair : myAlias) {
-            free(pair.second);
+            delete(pair.second);
         }
     }
     int addAlias(const std::string& name , const char* command);
