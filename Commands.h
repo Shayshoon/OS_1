@@ -18,9 +18,9 @@
 #define STIME (13)
 #define STARTTIME (21)
 #define BUFF_SIZE (4096)
-#define READ_SIZE (40)
 
 int _parseCommandLine(const char *cmd_line, char **args);
+
 class Command {
     // TODO: Add your data members
 protected:
@@ -29,7 +29,7 @@ protected:
     const char *cmd;
 public:
     Command(const char *cmd_line): cmd(cmd_line) {
-        this->args = (char **) malloc(sizeof(char *) * COMMAND_MAX_ARGS);
+        this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
         if (args == nullptr) {
             perror("smash error: malloc failed");
             exit(1);
@@ -44,9 +44,9 @@ public:
 
     virtual void execute() = 0;
 
-//virtual void prepare();
-//virtual void cleanup();
-// TODO: Add your extra methods if needed
+    //virtual void prepare();
+    //virtual void cleanup();
+    // TODO: Add your extra methods if needed
 
     const char* getCmd() {
         return this->cmd;
@@ -67,10 +67,13 @@ public:
 
 class ExternalCommand : public Command {
     bool isBackground;
+    bool isComplex;
 public:
     ExternalCommand(const char *cmd_line);
 
-    virtual ~ExternalCommand() = default;
+    virtual ~ExternalCommand() {
+        delete[] this->cmd;
+    }
 
     void execute() override;
 };
@@ -202,10 +205,11 @@ public:
             signals[num] = 1;
         }
 
-
         ~JobEntry() = default;
 
-
+        void setIsStopped(bool b) {
+            this->isStopped = b;
+        }
     };
 
     // TODO: Add your data members
@@ -216,6 +220,10 @@ public:
     JobsList();
 
     ~JobsList();
+
+    std::map<int, JobEntry>* getJobs() {
+        return this->jobs;
+    }
 
     void addJob(Command *cmd, pid_t pid, bool isStopped = false);
 
@@ -238,11 +246,13 @@ public:
 };
 
 class QuitCommand : public BuiltInCommand {
+    bool kill;
+    JobsList* jobs;
+public:
     // TODO: Add your data members public:
     QuitCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~QuitCommand() {
-    }
+    virtual ~QuitCommand() = default;
 
     void execute() override;
 };
@@ -263,9 +273,7 @@ public:
 class KillCommand : public BuiltInCommand {
     int signum;
     unsigned long pid;
-
     // TODO: Add your data members
-
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
 
@@ -277,11 +285,12 @@ public:
 
 class ForegroundCommand : public BuiltInCommand {
     // TODO: Add your data members
+    JobsList* jobs;
+    int jobId;
 public:
     ForegroundCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~ForegroundCommand() {
-    }
+    virtual ~ForegroundCommand() = default;
 
     void execute() override;
 };
@@ -313,18 +322,19 @@ public:
     virtual ~UnAliasCommand() {
     }
 
-
     void execute() override;
 };
 
 class UnSetEnvCommand : public BuiltInCommand {
+    std::vector<std::string> envVariables;
 public:
     UnSetEnvCommand(const char *cmd_line);
 
-    virtual ~UnSetEnvCommand() {
-    }
+    virtual ~UnSetEnvCommand() = default;
 
     void execute() override;
+
+    bool doesEnvVarExist(const char *var);
 };
 
 class WatchProcCommand : public BuiltInCommand {

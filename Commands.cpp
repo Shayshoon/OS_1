@@ -1,4 +1,3 @@
-
 #include <unistd.h>
 #include <string.h>
 #include <iostream>
@@ -13,6 +12,7 @@
 #include <regex>
 #include <cstring>
 #include <fcntl.h>
+#include <algorithm>
 
 using namespace std;
 
@@ -81,6 +81,15 @@ void _removeBackgroundSign(char *cmd_line) {
     cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+bool _isNumber(char* s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        if (!isdigit(s[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<std::string> split(const std::string& str, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(str);
@@ -136,7 +145,7 @@ string readFile(const string& path) {
     return string(buf);
 }
 
-// TODO: Add your implementation for classes in Commands.h 
+// TODO: Add your implementation for classes in Commands.h
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -170,11 +179,17 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new JobsCommand(cmd_line, this->jobs);
     } else if (firstWord == "showpid"){
         return new ShowPidCommand(cmd_line);
-    } else if (firstWord == "pwd"){
+    } else if (firstWord == "pwd") {
         return new GetCurrDirCommand(cmd_line);
-    } else if (firstWord == "cd"){
+    } else if (firstWord == "quit") {
+        return new QuitCommand(cmd_line, this->getjobs());
+    } else if (firstWord == "fg") {
+        return new ForegroundCommand(cmd_line, this->getjobs());
+    } else if (firstWord == "cd") {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
-    } else if (firstWord == "kill"){
+    } else if (firstWord == "unsetenv"){
+        return new UnSetEnvCommand(cmd_line);
+    } else if (firstWord == "kill") {
         return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
     } else if (firstWord == "alias"){
         return new AliasCommand(cmd_line);
@@ -461,9 +476,6 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(c
 }
 
 void KillCommand::execute() {
-   /* JobsList* jobs = SmallShell::getInstance().getjobs();
-    JobsList::JobEntry* job = jobs->getJobById(pid);
-    job->setSignal(signum);*/
     kill(pid , signum);
 }
 
@@ -474,11 +486,14 @@ void JobsCommand::execute() {
 
 ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
     this->isBackground = _isBackgroundCommand(this->cmd);
+    this->isComplex = string(this->cmd).find_first_of("?*") != string::npos;
+
     if (this->isBackground) {
         char* str = strdup(cmd_line);
         _removeBackgroundSign(str);
-        this->cmd = str;
-        this->argsCount = _parseCommandLine(this->cmd, this->args);
+        this->cmd = strdup(cmd_line);
+        this->argsCount = _parseCommandLine(str, this->args);
+        delete[] str;
     }
 }
 
@@ -497,11 +512,163 @@ void ExternalCommand::execute() {
     } else {
         // child process
         setpgrp();
-        execvp(this->args[0], this->args);
+        if (!this->isComplex) {
+            execvp(this->args[0], this->args);
+        } else {
+            char* args[4];
+            args[0] = (char*) "bash";
+            args[1] = (char*) "-c";
+            args[2] = (char*) this->getCmd();
+            args[3] = nullptr;
+            execvp(args[0], args);
+        }
 
         // if execvp fails, it means external command does not exist
         perror("smash error: execvp failed");
         exit(1);
+    }
+}
+
+QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line) {
+    this->kill = this->argsCount > 1 && strcmp(this->args[1], "kill") == 0;
+    this->jobs = jobs;
+}
+
+void QuitCommand::execute() {
+    if (this->kill) {
+        cout << "smash: sending SIGKILL signal to "
+            << this->jobs->getJobs()->size() << " jobs:" << endl;
+        for (std::pair<const int, JobsList::JobEntry> job: *this->jobs->getJobs()) {
+            cout << job.second.getPid() << ": " << job.second.getCmd() << endl;
+        }
+        SmallShell::getInstance().getjobs()->killAllJobs();
+    }
+    exit(0);
+}
+
+void ForegroundCommand::execute() {
+    JobsList::JobEntry* job = this->jobs->getJobById(this->jobId);
+
+    if (job->getIsStopped()) {
+        kill(job->getPid(), SIGCONT);
+        job->setIsStopped(false);
+    }
+
+    cout << job->getCmd() << " " << job->getPid() << endl;
+
+    if (waitpid(job->getPid(), nullptr, 0) == -1) {
+        perror("smash error: waitpid failed");
+    }
+
+    this->jobs->removeJobById(this->jobId);
+}
+
+ForegroundCommand::ForegroundCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line), jobs(jobs) {
+    if (this->argsCount > 2) {
+        cerr << "smash error: fg: invalid arguments" <<  endl;
+        return;
+    } if (this->argsCount == 2) {
+        if (!_isNumber(this->args[1])) {
+            cerr << "smash error: fg: invalid arguments" <<  endl;
+            return;
+        }
+
+        this->jobId = atoi(this->args[1]);
+        if (this->jobs->getJobById(this->jobId) == nullptr) {
+            cerr << "smash error: fg: job-id " << this->jobId << " does not exist" << endl;
+            return;
+        }
+    } else {
+        if (this->jobs->getJobs()->empty()) {
+            cerr << "smash error: fg: jobs list is empty" << endl;
+            return;
+        }
+
+        this->jobId = this->jobs->getJobs()->rbegin()->first;
+    }
+
+}
+
+UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line) {
+    if (this->argsCount < 2) {
+        cerr << "smash error: unsetenv: not enough arguments" << endl;
+    }
+
+    std::ostringstream oss;
+    oss << "/proc/" << getpid() << "/environ";
+    std::string path = oss.str();
+    int fd = open(path.c_str(), O_RDONLY);
+
+    if (fd == -1) {
+        cerr << "smash error: open failed" << endl;
+    } else {
+        char *buffer = (char *) malloc(4096);
+
+        if (buffer == nullptr) {
+            perror("smash error: malloc failed");
+        } else {
+            ssize_t bytesRead = read(fd, buffer, 4096);
+            buffer[bytesRead] = '\0';
+
+            if (bytesRead == -1) {
+                perror("smash error: read failed");
+            } else {
+                string env(buffer, bytesRead);
+                this->envVariables = split(env, '\0');
+
+                for (auto & envVariable : this->envVariables) {
+                    string str = envVariable;
+                    envVariable = str.substr(0, str.find('='));
+                }
+            }
+            free(buffer);
+        }
+        close(fd);
+    }
+}
+
+
+void _removeEnvVar(const char* var) {
+    size_t len = strlen(var);
+    for (char** env = environ; *env != nullptr; env++) {
+        if (strncmp(*env, var, len) == 0 && (*env)[len] == '=') {
+            char** newEnv = env;
+
+            *newEnv = newEnv[1];
+            newEnv++;
+            while (*newEnv != nullptr) {
+                *newEnv = newEnv[1];
+                newEnv++;
+            }
+            return;
+        }
+    }
+}
+
+bool UnSetEnvCommand::doesEnvVarExist(const char* var) {
+    bool found = false;
+    for (auto str = this->envVariables.begin();
+         str != this->envVariables.end() && !found; ++str) {
+        found |= strcmp(str->data(), var) == 0;
+    }
+
+    return found;
+}
+
+void UnSetEnvCommand::execute() {
+//    check if the args are valid
+    for (int i = 1; i < this->argsCount; i++) {
+        if (!this->doesEnvVarExist(this->args[i])) {
+            cerr << "smash error: unsetenv: " << this->args[i] << " does not exist" << endl;
+            continue;
+        }
+    }
+
+//    unset env variables using __environ array
+    for (int i = 1; i < this->argsCount; i++) {
+        for (int envIndex = 0; envIndex < (int) this->envVariables.size(); envIndex++) {
+            _removeEnvVar(this->args[i]);
+        }
     }
 }
 
