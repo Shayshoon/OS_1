@@ -9,8 +9,10 @@
 #include "Commands.h"
 #include <signal.h>
 #include <map>
-#include <algorithm>
+#include <regex>
+#include <cstring>
 #include <fcntl.h>
+#include <algorithm>
 
 using namespace std;
 
@@ -98,7 +100,52 @@ std::vector<std::string> split(const std::string& str, char delimiter) {
     return result;
 }
 
-// TODO: Add your implementation for classes in Commands.h 
+void parseAliasPattern(const char* input, std::string& name, char*& command) {
+    std::string line(input);
+
+    size_t eq_pos = line.find('=');
+    if (eq_pos == std::string::npos) {
+        cout << "invalid pattern parseAliasPatrern" << endl;
+    }
+
+    // Extract the name (before '=')
+    name = line.substr(0, eq_pos);
+
+    // Extract the command (after '='), strip quotes
+    std::string cmd = line.substr(eq_pos + 1);
+
+    // Remove the surrounding quotes and convert the command to char*
+    std::string command_str = cmd.substr(1, cmd.size() - 2); // Strip the quotes
+    command = strdup(command_str.c_str()); // Allocate char* memory
+}
+
+bool isInteger(const char* number) {
+    if (number == nullptr) return false;
+    for (int i = 0; number[i]; ++i) {
+        if (!isdigit(number[i]))
+            return false;
+    }
+    return true;
+}
+
+string readFile(const string& path) {
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return "";
+    }
+
+    char buf[4096];
+    ssize_t bytes = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (bytes <= 0) {
+        return "";
+    }
+
+    buf[bytes] = '\0';
+    return string(buf);
+}
+
+// TODO: Add your implementation for classes in Commands.h
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -107,11 +154,13 @@ SmallShell::SmallShell() {
     currDirectory = getcwd(NULL, 0);
     this->prompt = DEFAULT_PROMPT;
     this->jobs = new JobsList();
+    this->aliases = new AliasMap();
 }
 
 SmallShell::~SmallShell() {
 // TODO: add your implementation
     delete this->jobs;
+    delete this->aliases;
 }
 
 /**
@@ -121,6 +170,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     // For example:
     string cmd_s = _trim(string(cmd_line));
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
+    AliasMap* aliases = SmallShell::getAliasMap();
+    const char* thisAlias = aliases->getAlias(firstWord);
 
     if (firstWord == "chprompt") {
         return new ChangePromptCommand(cmd_line);
@@ -140,8 +191,17 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new UnSetEnvCommand(cmd_line);
     } else if (firstWord == "kill") {
         return new KillCommand(cmd_line , SmallShell::getInstance().getjobs());
-    } else if (false) { // TODO: check for alias
-    } else {
+    } else if (firstWord == "alias"){
+        return new AliasCommand(cmd_line);
+    }else if(firstWord == "unalias"){
+        return new UnAliasCommand(cmd_line);
+    }else if(firstWord == "watchproc"){
+        return new WatchProcCommand(cmd_line);
+    }
+    else if(thisAlias != nullptr){
+        return SmallShell::CreateCommand(thisAlias);
+        }
+    else{
         return new ExternalCommand(cmd_line);
     }
 
@@ -191,6 +251,10 @@ void SmallShell::setcurrDirectory(char* dir) {
 
 JobsList *SmallShell::getjobs() {
     return this->jobs;
+}
+
+AliasMap* SmallShell::getAliasMap() {
+    return  this->aliases;
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -266,6 +330,42 @@ JobsList::JobsList() {
 
 JobsList::~JobsList() {
     delete this->jobs;
+}
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%%-Alias-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+int AliasMap::addAlias(const std::string &name, const char *command) {
+    for(auto& pair:myAlias)
+        if(pair.first == name)
+            return 0;
+    myAlias.emplace_back(name, strdup(command));
+    return 1;
+}
+
+int AliasMap::removeAlias(const std::string &name) {
+   for (auto it = myAlias.begin(); it != myAlias.end(); ++it) {
+        if (it->first == name) {
+            delete(it->second);
+            myAlias.erase(it);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+const char *AliasMap::getAlias(const std::string &name) const {
+    for (const auto& pair : myAlias) {
+        if (pair.first == name) {
+            return pair.second;
+        }
+    }
+    return nullptr;
+}
+
+void AliasMap::print() {
+    for(const auto& pair: myAlias){
+        std::cout << pair.first << "='" << pair.second << "'" << std::endl;
+    }
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-commands-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -376,9 +476,7 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(c
 }
 
 void KillCommand::execute() {
-    JobsList* jobs = SmallShell::getInstance().getjobs();
-    JobsList::JobEntry* job = jobs->getJobById(pid);
-    job->setSignal(signum);
+    kill(pid , signum);
 }
 
 void JobsCommand::execute() {
@@ -573,3 +671,167 @@ void UnSetEnvCommand::execute() {
         }
     }
 }
+
+AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    this->shouldPrint = 0;
+    this->name_command = nullptr;
+    char* args[COMMAND_MAX_ARGS];
+   // int count = _parseCommandLine(cmd_line ,args);
+    if(std::string(args[0]) == "alias") {
+        if(args[1] == nullptr){
+            this->shouldPrint = 1;
+        }
+        else {
+            std::regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
+            if (std::regex_match(string(cmd_line), pattern)) {
+                parseAliasPattern(args[1], this->name, this->name_command);
+                AliasMap* alias = SmallShell::getInstance().getAliasMap();
+                if(alias->getAlias(this->name) != nullptr || alias->getShellKeywords().count(this->name)) {
+                    std::cout << "smash error: alias: " << name << " already exists or is a reserved command"
+                              << std::endl;
+                    return;
+                }
+            } else {
+                std::cout << "smash error: alias: invalid alias format" << std::endl;
+                return;
+            }
+        }
+    }
+
+
+}
+
+void AliasCommand::execute() {
+    AliasMap* alias = SmallShell::getInstance().getAliasMap();
+    if(this->shouldPrint == 1){
+        alias->print();
+    } else{
+        if(!alias->addAlias(this->name , this->name_command))
+            std::cout << "can not add" << std::endl;
+    }
+}
+
+void AliasCommand::createAlias(char *cmd) {
+    SmallShell::getInstance().CreateCommand(cmd);
+}
+
+UnAliasCommand::UnAliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    AliasMap* aliases = SmallShell::getInstance().getAliasMap();
+    if(args[1] == nullptr){
+        std::cout << "smash error: unalias: not enough arguments" << std::endl;
+        return;
+    }
+    for(int i=1 ; i<count ; i++){
+        if(aliases->getAlias(string(args[i])) == nullptr){
+            std::cout << "smash error: unalias: <" << string(args[i]) << "> alias does not exist" << std::endl;
+            return;
+        }
+        unAlias.push_back(std::string(args[i]));
+    }
+}
+
+void UnAliasCommand::execute() {
+    AliasMap* aliases = SmallShell::getInstance().getAliasMap();
+    for (const std::string& name : unAlias){
+        aliases->removeAlias(name);
+    }
+}
+
+WatchProcCommand::WatchProcCommand(const char *cmd_line)
+    : BuiltInCommand(cmd_line), cpuUsage(0.0), memoryUsage(""),
+        pidProcess(""), isValid(false){
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    if(count != 2 || !(isInteger(args[1]))){
+        cout << "smash error: watchproc: invalid arguments" << endl;
+        return;
+    }
+    int pid = atoi(args[1]);
+    if(kill(pid , 0) == 0) {
+        this->pidProcess = args[1];
+        this->isValid = true;
+    } else{
+        cout << "smash error: watchproc: pid <" << args[1] << "> does not exist" << endl;
+        return;
+    }
+}
+
+void WatchProcCommand::execute() {
+    if (!this->isValid) {
+        perror("error"); // TODO: write meaningful message
+        return;
+    }
+
+//      Read stat file
+    string statPath = "/proc/" + this->pidProcess + "/stat";
+    int fd = open(statPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    char* buf = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
+
+    string statContent = string(buf);
+
+
+//                extract relevant data
+    vector<string> info = split(statContent , ' ');
+    long utime = stol(info[UTIME]);
+    long stime = stol(info[STIME]);
+    long starttime = stol(info[STARTTIME]);
+    long clk_tck = sysconf(_SC_CLK_TCK);
+
+//    read uptime file
+    fd = open("/proc/uptime" , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
+
+    string uptimeContent = string(buf);
+    vector<string> info_time = split(uptimeContent , ' ');
+    double uptime = stol(info_time[0]);
+
+    double seconds = uptime - (starttime / (double) clk_tck);
+    this->cpuUsage = 100.0 * ((utime + stime) / (double) clk_tck) / seconds;
+
+//    read status file
+    string statusPath = "/proc/" + this->pidProcess + "/status";
+    fd = open(statusPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    bytesRead = read(fd , buf, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buf;
+        return;
+    }
+    buf[bytesRead] = '\0';
+
+    char* line = strtok(buf, "\n");
+    while (line) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            string result = string(&line[10]);
+            result = result.substr(0, result.size() - 3);
+            this->memoryUsage = result;
+        }
+        line = strtok(nullptr, "\n");
+    }
+
+    delete[] buf;
+
+    cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
+        << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
+}
+

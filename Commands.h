@@ -4,12 +4,20 @@
 
 #include <vector>
 #include <map>
+#include <cstring>
+#include <cstdlib>
+#include <set>
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
 #define DEFAULT_PROMPT "smash"
-#define NUMBEROFSIGNALS 3
-#define RANGEOFSIGNALS 32
+#define NUMBEROFSIGNALS (3)
+#define RANGEOFSIGNALS (32)
+#define MINIMUM_FOR_CALCULATE_CPUUSAGE (22)
+#define UTIME (12)
+#define STIME (13)
+#define STARTTIME (21)
+#define BUFF_SIZE (4096)
 
 int _parseCommandLine(const char *cmd_line, char **args);
 
@@ -31,7 +39,6 @@ public:
     }
 
     virtual ~Command() {
-//        delete[] cmd;
         delete[] args;
     }
 
@@ -45,6 +52,11 @@ public:
         return this->cmd;
     }
 };
+
+std::vector<std::string> split(const std::string& str, char delimiter);
+void parseAliasPattern(const char* input, std::string& name, char*& command);
+bool isInteger(const char* number);
+std::string readFile(const std::string& path);
 
 class BuiltInCommand : public Command {
 public:
@@ -284,16 +296,26 @@ public:
 };
 
 class AliasCommand : public BuiltInCommand {
+    std::string name;
+    char* name_command;
+    int shouldPrint;
 public:
     AliasCommand(const char *cmd_line);
 
     virtual ~AliasCommand() {
+        if (name_command) {
+            delete(name_command);
+            name_command = nullptr;
+        }
     }
+
+    void createAlias(char* cmd);
 
     void execute() override;
 };
 
 class UnAliasCommand : public BuiltInCommand {
+    std::vector<std::string > unAlias;
 public:
     UnAliasCommand(const char *cmd_line);
 
@@ -316,6 +338,10 @@ public:
 };
 
 class WatchProcCommand : public BuiltInCommand {
+    double cpuUsage;
+    std::string memoryUsage;
+    std::string pidProcess;
+    bool isValid;
 public:
     WatchProcCommand(const char *cmd_line);
 
@@ -325,12 +351,40 @@ public:
     void execute() override;
 };
 
+class AliasMap{
+private:
+    std::vector<std::pair<std::string, char*>> myAlias;
+    const std::set<std::string> shell_keywords = {
+            "chprompt", "showpid", "pwd", "cd", "jobs",
+            "fg", "quit", "lisdir", "kill", "alias",
+            "unalias", "unsetenv", "du", "whoami", "netinfo"
+            , "watchproc"
+    };
+public:
+    AliasMap(AliasMap const &) = delete;
+    void operator=(AliasMap const &) = delete;
+    AliasMap() = default;
+    ~AliasMap(){
+        for (auto& pair : myAlias) {
+            delete(pair.second);
+        }
+    }
+    int addAlias(const std::string& name , const char* command);
+    int removeAlias(const std::string& name);
+    const char* getAlias(const std::string& name) const ;
+    void print();
+    const std::set<std::string>& getShellKeywords() const {
+        return shell_keywords;
+    }
+};
+
 class SmallShell {
 private:
     std::string prompt;
     char* lastDirectory;
     char* currDirectory;
     JobsList* jobs;
+    AliasMap* aliases;
     SmallShell();
 
 public:
@@ -341,7 +395,9 @@ public:
     static SmallShell &getInstance() // make SmallShell singleton
     {
         static SmallShell instance; // Guaranteed to be destroyed.
+
         // Instantiated on first use.
+
         return instance;
     }
 
@@ -355,6 +411,7 @@ public:
     char* getcurrDirectory();
     void executeCommand(const char *cmd_line);
     JobsList* getjobs();
+    AliasMap* getAliasMap();
 
     // TODO: add extra methods as needed
 };
