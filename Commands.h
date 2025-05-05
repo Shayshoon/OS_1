@@ -21,9 +21,10 @@ class Command {
 protected:
     int argsCount;
     char** args;
-    const char *cmd;
+    const char* cmd;
+    const char* originalCmdLine;
 public:
-    Command(const char *cmd_line): cmd(cmd_line) {
+    Command(const char *cmd_line): cmd(cmd_line), originalCmdLine(nullptr) {
         this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
         if (args == nullptr) {
             perror("smash error: malloc failed");
@@ -34,6 +35,7 @@ public:
     }
 
     virtual ~Command() {
+        delete[] originalCmdLine;
         delete[] args;
     }
 
@@ -45,6 +47,15 @@ public:
 
     const char* getCmd() {
         return this->cmd;
+    }
+
+    const char* getOriginalCmdLine() {
+        return this->originalCmdLine;
+    }
+    void setOriginalCmdLine(const char* cmd_line) {
+        if (this->originalCmdLine == nullptr) {
+            this->originalCmdLine = cmd_line;
+        }
     }
 };
 
@@ -182,9 +193,6 @@ public:
         int getPid() const {
             return this->pid;
         }
-        const char* getCmd() const {
-            return this->cmd->getCmd();
-        }
         bool getIsStopped() {
             return this->isStopped;
         }
@@ -200,6 +208,9 @@ public:
 
         ~JobEntry() = default;
 
+        const char* getCmd() const {
+            return this->cmd->getOriginalCmdLine();
+        }
         void setIsStopped(bool b) {
             this->isStopped = b;
         }
@@ -289,16 +300,16 @@ public:
 };
 
 class AliasCommand : public BuiltInCommand {
-    std::string name;
-    char* name_command;
-    int print;
+    std::string aliasName;
+    char* cmdLine;
+    bool print;
 public:
     AliasCommand(const char *cmd_line);
 
     virtual ~AliasCommand() {
-        if (name_command) {
-            free(name_command);
-            name_command = nullptr;
+        if (cmdLine) {
+            free(cmdLine);
+            cmdLine = nullptr;
         }
     }
 
@@ -342,10 +353,10 @@ public:
 
 class AliasMap {
 private:
-    std::vector<std::pair<std::string, char*>> myAlias;
+    std::vector<std::pair<std::string, char*>> aliases;
     const std::set<std::string> shell_keywords = {
             "chprompt", "showpid", "pwd", "cd", "jobs",
-            "fg", "quit", "lisdir", "kill", "alias",
+            "fg", "quit", "watchproc", "kill", "alias",
             "unalias", "unsetenv", "du", "whoami", "netinfo"
     };
 public:
@@ -353,11 +364,11 @@ public:
     void operator=(AliasMap const &) = delete;
     AliasMap() = default;
     ~AliasMap(){
-        for (auto& pair : myAlias) {
+        for (auto& pair : aliases) {
             free(pair.second);
         }
     }
-    int addAlias(const std::string& name , const char* command);
+    void addAlias(const std::string& name , const char* command);
     int removeAlias(const std::string& name);
     const char* getAlias(const std::string& name) const ;
     void print();
