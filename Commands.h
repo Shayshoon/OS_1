@@ -14,9 +14,11 @@
 #define NUMBEROFSIGNALS (3)
 #define RANGEOFSIGNALS (32)
 #define MINIMUM_FOR_CALCULATE_CPUUSAGE (22)
-#define UTIME (13)
-#define STIME (14)
+#define UTIME (12)
+#define STIME (13)
 #define STARTTIME (21)
+#define BUFF_SIZE (4096)
+#define READ_SIZE (40)
 
 int _parseCommandLine(const char *cmd_line, char **args);
 class Command {
@@ -328,7 +330,8 @@ public:
 class WatchProcCommand : public BuiltInCommand {
     double cpuUsage;
     std::string memoryUsage;
-    char* pidProcess;
+    std::string pidProcess;
+    bool isValid;
 public:
     WatchProcCommand(const char *cmd_line);
 

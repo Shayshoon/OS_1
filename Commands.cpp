@@ -128,7 +128,7 @@ string readFile(const string& path) {
     char buf[4096];
     ssize_t bytes = read(fd, buf, sizeof(buf) - 1);
     close(fd);
-    if (bytes < 0) {
+    if (bytes <= 0) {
         return "";
     }
 
@@ -572,63 +572,97 @@ void UnAliasCommand::execute() {
     }
 }
 
-WatchProcCommand::WatchProcCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
-    this->cpuUsage = 0;
-    this->memoryUsage = "";
-    this->pidProcess = 0;
+WatchProcCommand::WatchProcCommand(const char *cmd_line): BuiltInCommand(cmd_line) , cpuUsage(0.0), memoryUsage(""),
+pidProcess("") , isValid(false){
     char* args[COMMAND_MAX_ARGS];
     int count = _parseCommandLine(cmd_line ,args);
-    JobsList* jobs = SmallShell::getInstance().getjobs();
     if(count != 2 || !(isInteger(args[1]))){
         cout << "smash error: watchproc: invalid arguments" << endl;
         return;
     }
-    if(jobs->getJobById(atoi(args[1])) == nullptr){
+    int pid = atoi(args[1]);
+    if(kill(pid , 0) == 0) {
+        this->pidProcess = args[1];
+        this->isValid = true;
+    } else{
         cout << "smash error: watchproc: pid <" << args[1] << "> does not exist" << endl;
         return;
     }
-    string stat_path = "/proc/" + std::to_string(atoi(args[1])) + "/stat";
-
-    string stat_content = readFile(stat_path);
-    if(stat_content.empty()){
-        cout << "no info in the path" << endl;
-        return;
-    }
-    auto tokens = split(stat_content, ' ');
-    if(tokens.size() < MINIMUM_FOR_CALCULATE_CPUUSAGE){
-        cout << "cant calculate the cpu usage" << endl;
-    }
-    long utime = stol(tokens[UTIME]);
-    long stime = stol(tokens[STIME]);
-    long starttime = stol(tokens[STARTTIME]);
-
-    long clk_tck = sysconf(_SC_CLK_TCK);
-
-    string uptime_content = readFile("/proc/uptime");
-    double uptime = stod(uptime_content);
-
-    double seconds = uptime - (starttime / (double)clk_tck);
-    double cpu_usage = 100.0 * ((utime + stime) / (double)clk_tck) / seconds;
-
-    string status_path = "/proc/" +std::to_string(atoi(args[1])) + "/status";
-
-    string status_content = readFile(status_path);
-    istringstream iss(status_content); //for read line by line
-    string line, mem_line;
-    while (std::getline(iss, line)) {
-        if (line.find("VmRSS:") == 0) {
-            mem_line = line;
-            break;
-        }
-    }
-    if(!mem_line.empty())
-        this->memoryUsage = mem_line;
-    this->cpuUsage = cpu_usage;
-    this->pidProcess = args[1];
 }
 
 void WatchProcCommand::execute() {
-    cout << "PID:" << this->pidProcess << " | CPU Usage: " << this->cpuUsage << " | Memory Usage: " << this->memoryUsage << endl;
+        if (this->isValid) {
+            string stat_path = "/proc/" + this->pidProcess + "/stat";
+            const char* thePathToStat = stat_path.c_str();
+            int descriptor = open(thePathToStat , O_RDONLY);
+            if(descriptor != -1){
+                string buf[BUFF_SIZE];
+                while (read(descriptor , buf , READ_SIZE) != 0){}
+                string content_buf;
+                for (int i = 0; i < BUFF_SIZE; ++i) {
+                    content_buf += buf[i];
+                }
+                vector<string> info = split(content_buf , ' ');
+                long utime = stol(info[UTIME]);
+                long stime = stol(info[STIME]);
+                long starttime = stol(info[STARTTIME]);
+                long clk_tck = sysconf(_SC_CLK_TCK);
+                int fd = open("/proc/uptime" , O_RDONLY);
+                string buf_time[BUFF_SIZE];
+                if(fd != -1){
+                    while ((read(fd , buf_time , READ_SIZE))){}
+                }
+                close(fd);
+                string content;
+                for (int i = 0; i < BUFF_SIZE; ++i) {
+                    content += buf_time[i];
+                }
+                vector<string> info_time = split(content , ' ');
+                double uptime = stol(info_time[0]);
+
+                double seconds = uptime - (starttime / (double) clk_tck);
+                double cpu_usage = 100.0 * ((utime + stime) / (double) clk_tck) / seconds;
+                this->cpuUsage = cpu_usage;
+                close(descriptor);
+            }
+            string status_path = "/proc/" + this->pidProcess + "/status";
+            const char* thePathToStatus = status_path.c_str();
+
+            int descriptor_two = open(thePathToStatus , O_RDONLY);
+            if (descriptor_two == -1) {
+                return;
+            }
+
+            char* buffer = (char*)malloc(BUFF_SIZE);
+            if (!buffer) {
+                close(descriptor_two);
+                return;
+            }
+
+            ssize_t bytes = read(descriptor_two , buffer, BUFF_SIZE - 1);
+            close(descriptor_two);
+            if (bytes <= 0) {
+                free(buffer);
+                return;
+            }
+
+            buffer[bytes] = '\0';
+
+            char* line = strtok(buffer, "\n");
+            while (line) {
+                if (strncmp(line, "VmRSS:", 6) == 0) {
+                    char* result = strdup(line);
+                    free(buffer);
+                    this->memoryUsage = result;
+                }
+                line = strtok(nullptr, "\n");
+            }
+
+            free(buffer);
+            close(descriptor_two);
+            cout << "PID:" << this->pidProcess << " | CPU Usage: " << this->cpuUsage << " | Memory Usage: "
+                 << this->memoryUsage << endl;
+        }
 
 }
 
