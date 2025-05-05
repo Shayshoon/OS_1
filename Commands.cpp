@@ -572,8 +572,9 @@ void UnAliasCommand::execute() {
     }
 }
 
-WatchProcCommand::WatchProcCommand(const char *cmd_line): BuiltInCommand(cmd_line) , cpuUsage(0.0), memoryUsage(""),
-pidProcess("") , isValid(false){
+WatchProcCommand::WatchProcCommand(const char *cmd_line)
+    : BuiltInCommand(cmd_line), cpuUsage(0.0), memoryUsage(""),
+        pidProcess(""), isValid(false){
     char* args[COMMAND_MAX_ARGS];
     int count = _parseCommandLine(cmd_line ,args);
     if(count != 2 || !(isInteger(args[1]))){
@@ -591,78 +592,79 @@ pidProcess("") , isValid(false){
 }
 
 void WatchProcCommand::execute() {
-        if (this->isValid) {
-            string stat_path = "/proc/" + this->pidProcess + "/stat";
-            const char* thePathToStat = stat_path.c_str();
-            int descriptor = open(thePathToStat , O_RDONLY);
-            if(descriptor != -1){
-                string buf[BUFF_SIZE];
-                while (read(descriptor , buf , READ_SIZE) != 0){}
-                string content_buf;
-                for (int i = 0; i < BUFF_SIZE; ++i) {
-                    content_buf += buf[i];
-                }
-                vector<string> info = split(content_buf , ' ');
-                long utime = stol(info[UTIME]);
-                long stime = stol(info[STIME]);
-                long starttime = stol(info[STARTTIME]);
-                long clk_tck = sysconf(_SC_CLK_TCK);
-                int fd = open("/proc/uptime" , O_RDONLY);
-                string buf_time[BUFF_SIZE];
-                if(fd != -1){
-                    while ((read(fd , buf_time , READ_SIZE))){}
-                }
-                close(fd);
-                string content;
-                for (int i = 0; i < BUFF_SIZE; ++i) {
-                    content += buf_time[i];
-                }
-                vector<string> info_time = split(content , ' ');
-                double uptime = stol(info_time[0]);
+    if (!this->isValid) {
+        perror("error"); // TODO: write meaningful message
+        return;
+    }
 
-                double seconds = uptime - (starttime / (double) clk_tck);
-                double cpu_usage = 100.0 * ((utime + stime) / (double) clk_tck) / seconds;
-                this->cpuUsage = cpu_usage;
-                close(descriptor);
-            }
-            string status_path = "/proc/" + this->pidProcess + "/status";
-            const char* thePathToStatus = status_path.c_str();
+//      Read stat file
+    string statPath = "/proc/" + this->pidProcess + "/stat";
+    int fd = open(statPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    char* buf = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
 
-            int descriptor_two = open(thePathToStatus , O_RDONLY);
-            if (descriptor_two == -1) {
-                return;
-            }
+    string statContent = string(buf);
 
-            char* buffer = (char*)malloc(BUFF_SIZE);
-            if (!buffer) {
-                close(descriptor_two);
-                return;
-            }
 
-            ssize_t bytes = read(descriptor_two , buffer, BUFF_SIZE - 1);
-            close(descriptor_two);
-            if (bytes <= 0) {
-                free(buffer);
-                return;
-            }
+//                extract relevant data
+    vector<string> info = split(statContent , ' ');
+    long utime = stol(info[UTIME]);
+    long stime = stol(info[STIME]);
+    long starttime = stol(info[STARTTIME]);
+    long clk_tck = sysconf(_SC_CLK_TCK);
 
-            buffer[bytes] = '\0';
+//    read uptime file
+    fd = open("/proc/uptime" , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
 
-            char* line = strtok(buffer, "\n");
-            while (line) {
-                if (strncmp(line, "VmRSS:", 6) == 0) {
-                    char* result = strdup(line);
-                    free(buffer);
-                    this->memoryUsage = result;
-                }
-                line = strtok(nullptr, "\n");
-            }
+    string uptimeContent = string(buf);
+    vector<string> info_time = split(uptimeContent , ' ');
+    double uptime = stol(info_time[0]);
 
-            free(buffer);
-            close(descriptor_two);
-            cout << "PID:" << this->pidProcess << " | CPU Usage: " << this->cpuUsage << " | Memory Usage: "
-                 << this->memoryUsage << endl;
+    double seconds = uptime - (starttime / (double) clk_tck);
+    this->cpuUsage = 100.0 * ((utime + stime) / (double) clk_tck) / seconds;
+
+//    read status file
+    string statusPath = "/proc/" + this->pidProcess + "/status";
+    fd = open(statusPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    bytesRead = read(fd , buf, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buf;
+        return;
+    }
+    buf[bytesRead] = '\0';
+
+    char* line = strtok(buf, "\n");
+    while (line) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            string result = string(&line[10]);
+            result = result.substr(0, result.size() - 3);
+            this->memoryUsage = result;
         }
+        line = strtok(nullptr, "\n");
+    }
 
+    delete[] buf;
+
+    cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
+        << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 
