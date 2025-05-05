@@ -9,10 +9,10 @@
 #include "Commands.h"
 #include <signal.h>
 #include <map>
-#include <algorithm>
-#include <fcntl.h>
 #include <regex>
 #include <cstring>
+#include <fcntl.h>
+#include <algorithm>
 
 using namespace std;
 
@@ -166,10 +166,12 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new ForegroundCommand(cmd_line, this->getjobs());
     } else if (firstWord == "cd") {
         return new ChangeDirCommand(cmd_line,&lastDirectory);
-    } else if (firstWord == "unsetenv") {
+    } else if (firstWord == "unsetenv"){
         return new UnSetEnvCommand(cmd_line);
     } else if (firstWord == "kill") {
         return new KillCommand(cmd_line, this->getjobs());
+    } else if(firstWord == "watchproc"){
+        return new WatchProcCommand(cmd_line);
     } else if (firstWord == "alias") {
         return new AliasCommand(cmd_line);
     } else if (firstWord == "unalias") {
@@ -451,9 +453,7 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(c
 }
 
 void KillCommand::execute() {
-    JobsList* jobs = SmallShell::getInstance().getjobs();
-    JobsList::JobEntry* job = jobs->getJobById(pid);
-    job->setSignal(signum);
+    kill(pid , signum);
 }
 
 void JobsCommand::execute() {
@@ -709,5 +709,102 @@ void UnAliasCommand::execute() {
     for (const string& name : unAlias){
         aliases->removeAlias(name);
     }
+}
+
+
+WatchProcCommand::WatchProcCommand(const char *cmd_line)
+        : BuiltInCommand(cmd_line), cpuUsage(0.0), memoryUsage(""),
+          pidProcess(""), isValid(false){
+    char* args[COMMAND_MAX_ARGS];
+    int count = _parseCommandLine(cmd_line ,args);
+    if(count != 2 || !(_isNumber(args[1]))){
+        cout << "smash error: watchproc: invalid arguments" << endl;
+        return;
+    }
+    int pid = atoi(args[1]);
+    if(kill(pid , 0) == 0) {
+        this->pidProcess = args[1];
+        this->isValid = true;
+    } else{
+        cout << "smash error: watchproc: pid <" << args[1] << "> does not exist" << endl;
+        return;
+    }
+}
+
+void WatchProcCommand::execute() {
+    if (!this->isValid) {
+        perror("error"); // TODO: write meaningful message
+        return;
+    }
+
+//      Read stat file
+    string statPath = "/proc/" + this->pidProcess + "/stat";
+    int fd = open(statPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    char* buf = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
+
+    string statContent = string(buf);
+
+
+//                extract relevant data
+    vector<string> info = split(statContent , ' ');
+    long utime = stol(info[UTIME]);
+    long stime = stol(info[STIME]);
+    long starttime = stol(info[STARTTIME]);
+    long clk_tck = sysconf(_SC_CLK_TCK);
+
+//    read uptime file
+    fd = open("/proc/uptime" , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    read(fd , buf , BUFF_SIZE - 1);
+    close(fd);
+    buf[bytesRead] = '\0';
+
+    string uptimeContent = string(buf);
+    vector<string> info_time = split(uptimeContent , ' ');
+    double uptime = stol(info_time[0]);
+
+    double seconds = uptime - (starttime / (double) clk_tck);
+    this->cpuUsage = 100.0 * ((utime + stime) / (double) clk_tck) / seconds;
+
+//    read status file
+    string statusPath = "/proc/" + this->pidProcess + "/status";
+    fd = open(statusPath.c_str() , O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+    bytesRead = read(fd , buf, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buf;
+        return;
+    }
+    buf[bytesRead] = '\0';
+
+    char* line = strtok(buf, "\n");
+    while (line) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            string result = string(&line[10]);
+            result = result.substr(0, result.size() - 3);
+            this->memoryUsage = result;
+        }
+        line = strtok(nullptr, "\n");
+    }
+
+    delete[] buf;
+
+    cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
+         << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 

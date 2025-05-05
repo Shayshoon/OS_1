@@ -13,6 +13,11 @@
 #define DEFAULT_PROMPT "smash"
 #define NUMBEROFSIGNALS (3)
 #define RANGEOFSIGNALS (32)
+#define MINIMUM_FOR_CALCULATE_CPUUSAGE (22)
+#define UTIME (12)
+#define STIME (13)
+#define STARTTIME (21)
+#define BUFF_SIZE (4096)
 
 int _parseCommandLine(const char *cmd_line, char **args);
 
@@ -61,6 +66,10 @@ public:
 
 std::vector<std::string> split(const std::string& str, char delimiter);
 void parseAliasPattern(const char* input, std::string& name, char*& command);
+
+std::vector<std::string> split(const std::string& str, char delimiter);
+void parseAliasPattern(const char* input, std::string& name, char*& command);
+std::string readFile(const std::string& path);
 
 class BuiltInCommand : public Command {
 public:
@@ -342,6 +351,10 @@ public:
 };
 
 class WatchProcCommand : public BuiltInCommand {
+    double cpuUsage;
+    std::string memoryUsage;
+    std::string pidProcess;
+    bool isValid;
 public:
     WatchProcCommand(const char *cmd_line);
 
