@@ -347,6 +347,23 @@ void AliasMap::print() {
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-commands-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
+Command::Command(const char *cmd_line): cmd(cmd_line), originalCmdLine(nullptr) {
+    this->args = new char*[COMMAND_MAX_ARGS];
+    this->argsCount = _parseCommandLine(cmd_line, this->args);
+    this->isBackground = _isBackgroundCommand(this->getCmd());
+
+    char* str = strdup(cmd_line);
+
+    if (this->isBackground) {
+        _removeBackgroundSign(str);
+    }
+
+    this->cmd = strdup(cmd_line);
+    this->argsCount = _parseCommandLine(str, this->args);
+    delete[] str;
+}
+
 ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
     string cmd_s = _trim(string(cmdLine));
     int index = (int) cmd_s.find_first_of(WHITESPACE);
@@ -459,19 +476,6 @@ void KillCommand::execute() {
 void JobsCommand::execute() {
     this->jobs->removeFinishedJobs();
     this->jobs->printJobsList();
-}
-
-ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
-    this->isBackground = _isBackgroundCommand(this->getCmd());
-    this->isComplex = string(this->getCmd()).find_first_of("?*") != string::npos;
-
-    if (this->isBackground) {
-        char* str = strdup(cmd_line);
-        _removeBackgroundSign(str);
-        this->cmd = strdup(cmd_line);
-        this->argsCount = _parseCommandLine(str, this->args);
-        delete[] str;
-    }
 }
 
 void ExternalCommand::execute() {

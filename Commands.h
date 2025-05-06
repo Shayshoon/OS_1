@@ -27,20 +27,15 @@ protected:
     int argsCount;
     char** args;
     const char* cmd;
+    bool isBackground;
     const char* originalCmdLine;
-public:
-    Command(const char *cmd_line): cmd(cmd_line), originalCmdLine(nullptr) {
-        this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
-        if (args == nullptr) {
-            perror("smash error: malloc failed");
-            exit(1);
-        }
 
-        this->argsCount = _parseCommandLine(cmd_line, args);
-    }
+public:
+    Command(const char *cmd_line);
 
     virtual ~Command() {
         delete[] originalCmdLine;
+        delete[] this->cmd;
         delete[] args;
     }
 
@@ -68,25 +63,23 @@ std::vector<std::string> split(const std::string& str, char delimiter);
 void parseAliasPattern(const char* input, std::string& name, char*& command);
 
 std::vector<std::string> split(const std::string& str, char delimiter);
-void parseAliasPattern(const char* input, std::string& name, char*& command);
 std::string readFile(const std::string& path);
 
 class BuiltInCommand : public Command {
 public:
-    BuiltInCommand(const char *cmd_line): Command(cmd_line) { }
+    BuiltInCommand(const char *cmd_line): Command(cmd_line) {}
 
-    virtual ~BuiltInCommand() = default;
+    ~BuiltInCommand() override = default;
 };
 
 class ExternalCommand : public Command {
-    bool isBackground;
     bool isComplex;
 public:
-    ExternalCommand(const char *cmd_line);
-
-    virtual ~ExternalCommand() {
-        delete[] this->cmd;
+    ExternalCommand(const char *cmd_line): Command(cmd_line) {
+        this->isComplex = std::string(this->getCmd()).find_first_of("?*") != std::string::npos;
     }
+
+    ~ExternalCommand() override = default;
 
     void execute() override;
 };
