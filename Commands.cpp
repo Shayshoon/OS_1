@@ -13,6 +13,8 @@
 #include <cstring>
 #include <fcntl.h>
 #include <algorithm>
+#include <sys/stat.h>
+#include <cmath>
 
 using namespace std;
 
@@ -176,6 +178,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(cmd_line);
     } else if (firstWord == "unalias") {
         return new UnAliasCommand(cmd_line);
+    } else if (firstWord == "du") {
+        return new DiskUsageCommand(cmd_line);
     } else {
         return new ExternalCommand(cmd_line);
     }
@@ -812,3 +816,20 @@ void WatchProcCommand::execute() {
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 
+long getBlocksOfFile(const string& path) {
+    struct stat sb {};
+    if (stat(path.c_str(), &sb) == -1) {
+        if (errno == ENOENT) {
+            cerr << "smash error: du: directory " << path << " does not exist" << endl;
+        }
+        perror("smash error: stat failed");
+        return -1;
+    }
+    return sb.st_blocks;
+}
+
+void DiskUsageCommand::execute() {
+//    TODO: iterate recursively over the directory
+
+    cout << "Total disk usage: " << std::ceil(0.5 * double(getBlocksOfFile(this->path))) << " KB" << endl;
+}

@@ -117,11 +117,16 @@ public:
 };
 
 class DiskUsageCommand : public Command {
+    std::string path;
 public:
-    DiskUsageCommand(const char *cmd_line);
-
-    virtual ~DiskUsageCommand() {
+    DiskUsageCommand(const char *cmd_line): Command(cmd_line) {
+        if (this->argsCount > 2) {
+            std::cerr << "smash error: du: too many arguments";
+        }
+        this->path = this->argsCount > 1 ? this->args[1] : "."; // TODO: use absolute path
     }
+
+    ~DiskUsageCommand() override = default;
 
     void execute() override;
 };
