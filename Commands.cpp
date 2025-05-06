@@ -116,6 +116,18 @@ void parseAliasPattern(const char* input, string& name, char*& command) {
     command = strdup(command_str.c_str()); // Allocate char* memory
 }
 
+string getPwd() {
+    char* buff = getcwd(nullptr, 0);
+    string result;
+
+    if(buff != nullptr){
+        result = string(buff);
+    }
+    free(buff);
+
+    return result;
+}
+
 // TODO: Add your implementation for classes in Commands.h
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -176,6 +188,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(cmd_line);
     } else if (firstWord == "unalias") {
         return new UnAliasCommand(cmd_line);
+    } else if (firstWord == "whoami") {
+        return new WhoAmICommand(cmd_line);
     } else {
         return new ExternalCommand(cmd_line);
     }
@@ -384,10 +398,9 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    char* buff = getcwd(NULL, 0);
-    if(buff != NULL){
-        std::cout << buff << std::endl;
-        free(buff);
+    string pwd = getPwd();
+    if(!pwd.empty()){
+        cout << pwd << endl;
     }
 }
 
@@ -812,3 +825,41 @@ void WatchProcCommand::execute() {
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 
+void WhoAmICommand::execute() {
+    cout << this->username << " " << getPwd() << endl;
+}
+
+WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
+    uid_t uid = getuid();
+
+//    open /etc/passwd file using only syscalls
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+
+    char* buffer = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd, buffer, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buffer;
+        return;
+    }
+    buffer[bytesRead] = '\0';
+    string passwdContent(buffer);
+    delete[] buffer;
+
+    vector<string> lines = split(passwdContent, '\n');
+
+    for (const string &line : lines) {
+        if (!line.empty()) {
+            vector<string> fields = split(line, ':');
+            if (fields.size() > 2 && stoi(fields[2]) == (int) uid) {
+                this->username = fields[0];
+                break;
+            }
+        }
+    }
+}
