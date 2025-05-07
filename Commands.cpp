@@ -20,7 +20,7 @@
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <cerrno>
-#include <linux/dirent.h>
+
 
 using namespace std;
 
