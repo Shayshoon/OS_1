@@ -17,6 +17,7 @@
 #include <cmath>
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 using namespace std;
 
@@ -845,6 +846,8 @@ void DiskUsageCommand::execute() {
     char                 buf[BUFF_SIZE];
     long                 nread;
     struct dirent  *d;
+
+    long totalBlocks = 0;
 
     fd = open(this->argsCount > 1 ? this->args[1] : ".", O_RDONLY | O_DIRECTORY);
     if (fd == -1) {
