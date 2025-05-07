@@ -148,9 +148,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
     const char* thisAlias = this->aliases->getAlias(firstWord);
 
-    char* args[COMMAND_MAX_ARGS];
-    _parseCommandLine(cmd_line, args);
-    if(string(args[1]) == ">" || string(args[1]) == ">>"){
+    if (regex_match(cmd_s, regex("^(([^>]*>[^>]*)|([^>]*>>[^>]*))$"))) {
         return new RedirectionCommand(cmd_line);
     }
 
@@ -814,30 +812,63 @@ void WatchProcCommand::execute() {
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 
-//$$$$$$$$$$$$$$$$$$$$$$$$$$$$$-spaciel command-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%-special command-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) ,dfFile(-1) {
-    if (this->argsCount >= 3 && (strcmp(this->args[this->argsCount - 2], ">>") == 0 || strcmp(this->args[this->argsCount - 2], ">") == 0)) {
-        this->dfFile = open(this->args[this->argsCount - 1], O_WRONLY | O_CREAT, 0666);
-        if (dfFile == -1) {
-            return;
-        }
-        this->args[this->argsCount - 2] = nullptr;
-        this->argsCount -= 2;
+RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) , outputFile(-1) {
+    int flag = O_CREAT | O_WRONLY;
+    bool appendMode;
+
+    string cmd_s = _trim(string(cmd_line));
+    appendMode = cmd_s.find(">>") != string::npos;
+    flag |= appendMode ? O_APPEND : O_TRUNC;
+
+    vector<string> parts = split(cmd_s, '>');
+
+    string path = _trim(parts.rbegin()->data());
+    char* path_c = strdup(path.c_str());
+    if (_isBackgroundCommand(path_c)) {
+        _removeBackgroundSign(path_c);
+        path = string(path_c);
     }
+    delete path_c;
+    path = path.substr(0, path.find_first_of(WHITESPACE));
+    string cmd = _trim(parts.front());
+
+    this->outputFile = open(path.c_str(), flag, 0666);
+
+    if (outputFile == -1) {
+        perror("smash error: open failed");
+        cerr << "errno " << errno << endl;
+        return;
+    }
+
+    this->cmdToRun = string(cmd_line);
+    this->cmdToRun = this->cmdToRun.substr(0, this->cmdToRun.find_first_of('>'));
 }
 
 void RedirectionCommand::execute() {
-    pid_t pid = fork();
-    if(pid == 0){
-        if(this->dfFile != -1) {
-            dup2(this->dfFile, 1);
-            close(this->dfFile);
-        }
-        execvp(this->args[0] , args);
+    int stdoutCopy = dup(STDOUT_FILENO);
+    if (stdoutCopy == -1) {
+        perror("smash error: dup failed");
+        return;
     }
-    else{
-        wait(NULL);
+
+    if (dup2(this->outputFile, STDOUT_FILENO) == -1) {
+        perror("smash error: dup2 failed");
+        close(this->outputFile);
+        return;
     }
+    close(this->outputFile);
+
+    Command* cmd = SmallShell::getInstance().CreateCommand(this->cmdToRun.c_str());
+    cmd->execute();
+
+    if (dup2(stdoutCopy, STDOUT_FILENO) == -1) {
+        perror("smash error: dup2 failed");
+        close(stdoutCopy);
+        return;
+    }
+
+    close(stdoutCopy);
 }
 

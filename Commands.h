@@ -103,8 +103,8 @@ public:
 };
 
 class RedirectionCommand : public Command {
-    int dfFile;
-    // TODO: Add your data members
+    int outputFile;
+    std::string cmdToRun;
 public:
     explicit RedirectionCommand(const char *cmd_line);
 
