@@ -852,7 +852,7 @@ void DiskUsageCommand::execute() {
         exit(1);
     }
 
-    while ((nread = getdents64(fd, buf, BUFF_SIZE)) != 0) {
+    while ((nread = getdents(fd, buf, BUFF_SIZE)) != 0) {
         if (nread == -1) {
             cerr << "getdents";
             exit(1);
