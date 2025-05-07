@@ -122,6 +122,7 @@ public:
     DiskUsageCommand(const char *cmd_line): Command(cmd_line) {
         if (this->argsCount > 2) {
             std::cerr << "smash error: du: too many arguments";
+            exit(1);
         }
         this->path = this->argsCount > 1 ? this->args[1] : "."; // TODO: use absolute path
     }

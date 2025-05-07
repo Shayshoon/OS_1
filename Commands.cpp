@@ -852,13 +852,50 @@ void DiskUsageCommand::execute() {
         exit(1);
     }
 
-    while ((nread = getdents(fd, buf, BUFF_SIZE)) != 0) {
+    while (true) {
+        nread = getdents64(fd, buf, BUFF_SIZE);
         if (nread == -1) {
-            cerr << "getdents";
+            perror("getdents64");
             exit(1);
         }
+        if (nread == 0) {
+            break;
+        }
+    }
 
-        printf("--------------- nread=%ld ---------------\n", nread);
+    for (size_t bpos = 0; bpos < (size_t)nread;) {
+        d = (struct dirent *)(buf + bpos);
+        std::string name = d->d_name;
+
+        // Skip "." and ".." directories
+        if (name == "." || name == "..") {
+            bpos += d->d_reclen;
+            continue;
+        }
+
+        // Construct the full path to the file or directory
+        std::string full_path = this->path + "/" + name;
+
+        // Get the disk usage (blocks) for this file/directory
+        long blocks = getBlocksOfFile(full_path);
+        if (blocks != -1) {
+            std::cout << name << ": " << blocks << " blocks" << std::endl;
+            totalBlocks += blocks;  // Add to total
+        }
+
+        // Move to the next entry
+        bpos += d->d_reclen;
+    }
+
+
+// Close the directory file descriptor
+close(fd);
+
+// Calculate the total disk usage in KB (rounding up)
+double totalKB = 0.5 * totalBlocks;  // Assuming each block is 512 bytes (0.5 KB)
+std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
+
+     /*   printf("--------------- nread=%ld ---------------\n", nread);
         printf("inode#    file type  d_reclen  d_off   d_name\n");
         for (size_t bpos = 0; bpos < nread;) {
             d = (struct dirent *) (buf + bpos);
@@ -871,5 +908,5 @@ void DiskUsageCommand::execute() {
         }
     }
 
-    exit(EXIT_SUCCESS);
+    exit(EXIT_SUCCESS);*/
 }
