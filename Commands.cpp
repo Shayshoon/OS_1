@@ -867,29 +867,29 @@ void DiskUsageCommand::execute() {
         if (nread == 0) {
             break;
         }
-    }
 
-    for (size_t bpos = 0; bpos < (size_t)nread;) {
-        d = (struct dirent *)(buf + bpos);
-        std::string name = d->d_name;
+        for (size_t bpos = 0; bpos < (size_t) nread;) {
+            d = (struct dirent *) (buf + bpos);
+            std::string name = d->d_name;
 
-        // Skip "." and ".." directories
-        if (name == "." || name == "..") {
+            // Skip "." and ".." directories
+            if (name == "." || name == "..") {
+                bpos += d->d_reclen;
+                continue;
+            }
+
+            // Construct the full path to the file or directory
+            std::string full_path = this->path + "/" + name;
+
+            // Get the disk usage (blocks) for this file/directory
+            long blocks = getBlocksOfFile(full_path);
+            if (blocks != -1) {
+                std::cout << name << ": " << blocks << " blocks" << std::endl;
+                totalBlocks += blocks;  // Add to total
+            }
+
             bpos += d->d_reclen;
-            continue;
         }
-
-        // Construct the full path to the file or directory
-        std::string full_path = this->path + "/" + name;
-
-        // Get the disk usage (blocks) for this file/directory
-        long blocks = getBlocksOfFile(full_path);
-        if (blocks != -1) {
-            std::cout << name << ": " << blocks << " blocks" << std::endl;
-            totalBlocks += blocks;  // Add to total
-        }
-
-        bpos += d->d_reclen;
     }
 
 close(fd);
