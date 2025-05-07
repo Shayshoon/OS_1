@@ -18,6 +18,9 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
+#include <cerrno>
+#include <linux/dirent.h>
 
 using namespace std;
 
@@ -845,7 +848,7 @@ void DiskUsageCommand::execute() {
     char                 d_type;
     char                 buf[BUFF_SIZE];
     long                 nread;
-    struct dirent  *d;
+    struct linux_dirent64  *d;
 
     long totalBlocks = 0;
 
@@ -856,7 +859,7 @@ void DiskUsageCommand::execute() {
     }
 
     while (true) {
-        nread = getdents64(fd, buf, BUFF_SIZE);
+        nread = getdents64(fd, (struct linux_dirent64*)buf, BUFF_SIZE);
         if (nread == -1) {
             perror("getdents64");
             exit(1);
@@ -867,7 +870,7 @@ void DiskUsageCommand::execute() {
     }
 
     for (size_t bpos = 0; bpos < (size_t)nread;) {
-        d = (struct dirent *)(buf + bpos);
+        d = (struct linux_dirent64*)(buf + bpos);
         std::string name = d->d_name;
 
         // Skip "." and ".." directories
@@ -912,4 +915,8 @@ std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
     }
 
     exit(EXIT_SUCCESS);*/
+}
+
+ssize_t getdents64(int fd, struct linux_dirent64* dirp, size_t count) {
+    return syscall(SYS_getdents64, fd, dirp, count);
 }
