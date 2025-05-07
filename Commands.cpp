@@ -145,6 +145,10 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return nullptr;
     }
 
+    if (regex_match(cmd_s, regex("^[^|&]+\\|[^|&]+$|^[^|&]+(\\|&)[^|&]+$"))) {
+        return new PipeCommand(cmd_line);
+    }
+
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
     const char* thisAlias = this->aliases->getAlias(firstWord);
 
@@ -812,3 +816,82 @@ void WatchProcCommand::execute() {
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
 }
 
+PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {
+    string cmd_s = string(cmd_line);
+    int pipeIndex = cmd_s.find('|');
+    this->sender = _trim(cmd_s.substr(0, pipeIndex));
+    this->forwardErrors = (cmd_s[pipeIndex + 1] == '&');
+
+    if (this->forwardErrors) {
+        this->receiver = _trim(cmd_s.substr(pipeIndex + 2, string::npos));
+    } else {
+        this->receiver = _trim(cmd_s.substr(pipeIndex + 1, string::npos));
+    }
+}
+
+void PipeCommand::execute() {
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        perror("smash error: pipe failed");
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("smash error: fork failed");
+        return;
+    } else if (pid == 0) {
+        // Child process for receiver
+        if (close(pipefd[1]) == -1) {
+            perror("smash error: close failed");
+            exit(1);
+        }
+        if (dup2(pipefd[0], STDIN_FILENO) == -1) {
+            perror("smash error: dup2 failed");
+            exit(1);
+        }
+        if (close(pipefd[0]) == -1) {
+            perror("smash error: close failed");
+            exit(1);
+        }
+        Command* cmd = SmallShell::getInstance().CreateCommand(this->receiver.c_str());
+        cmd->execute();
+        exit(0);
+    } else {
+        int fileno = this->forwardErrors ? STDERR_FILENO : STDOUT_FILENO;
+        int stdout_fd = dup(fileno);
+        if (stdout_fd == -1) {
+            perror("smash error: dup failed");
+            return;
+        }
+        if (dup2(pipefd[1], fileno) == -1) {
+            perror("smash error: dup2 failed");
+            return;
+        }
+        if (close(pipefd[1]) == -1) {
+            perror("smash error: close failed");
+            return;
+        }
+        if (close(pipefd[0]) == -1) {
+            perror("smash error: close failed");
+            return;
+        }
+
+        Command* cmd = SmallShell::getInstance().CreateCommand(this->sender.c_str());
+        cmd->execute();
+
+        if (dup2(stdout_fd, fileno) == -1) {
+            perror("smash error: dup2 failed");
+            return;
+        }
+        if (close(stdout_fd) == -1) {
+            perror("smash error: close failed");
+            return;
+        }
+    }
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    waitpid(pid, nullptr, 0);
+}

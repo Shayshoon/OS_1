@@ -106,12 +106,15 @@ public:
 };
 
 class PipeCommand : public Command {
+    std::string receiver;
+    std::string sender;
+    bool forwardErrors;
+
     // TODO: Add your data members
 public:
     PipeCommand(const char *cmd_line);
 
-    virtual ~PipeCommand() {
-    }
+    virtual ~PipeCommand() = default;
 
     void execute() override;
 };
