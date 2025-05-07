@@ -61,7 +61,6 @@ public:
 
 std::vector<std::string> split(const std::string& str, char delimiter);
 void parseAliasPattern(const char* input, std::string& name, char*& command);
-ssize_t getdents64(int fd, struct linux_dirent64* dirp, size_t count);
 
 std::vector<std::string> split(const std::string& str, char delimiter);
 std::string readFile(const std::string& path);
