@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <sys/stat.h>
 #include <cmath>
+#include <dirent.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -828,8 +830,46 @@ long getBlocksOfFile(const string& path) {
     return sb.st_blocks;
 }
 
+//void DiskUsageCommand::execute() {
+////    iterate recursively over the directory using getdents syscall only
+//    struct linux_dirent* dirent = new linux_dirent[BUFF_SIZE];
+//    int fd = open(this->path.c_str(), O_RDONLY | O_DIRECTORY);
+//    getdents64(fd, );
+//
+//
+//    cout << "Total disk usage: " << std::ceil(0.5 * double(getBlocksOfFile(this->path))) << " KB" << endl;
+//}
 void DiskUsageCommand::execute() {
-//    TODO: iterate recursively over the directory
+    int                  fd;
+    char                 d_type;
+    char                 buf[BUFF_SIZE];
+    long                 nread;
+    struct dirent  *d;
 
-    cout << "Total disk usage: " << std::ceil(0.5 * double(getBlocksOfFile(this->path))) << " KB" << endl;
+    fd = open(this->argsCount > 1 ? this->args[1] : ".", O_RDONLY | O_DIRECTORY);
+    if (fd == -1) {
+        cerr << "open";
+        exit(1);
+    }
+
+    while ((nread = getdents64(fd, buf, BUFF_SIZE)) != 0) {
+        if (nread == -1) {
+            cerr << "getdents";
+            exit(1);
+        }
+
+        printf("--------------- nread=%ld ---------------\n", nread);
+        printf("inode#    file type  d_reclen  d_off   d_name\n");
+        for (size_t bpos = 0; bpos < nread;) {
+            d = (struct dirent *) (buf + bpos);
+            printf("%8lu  ", d->d_ino);
+            d_type = *(buf + bpos + d->d_reclen - 1);
+            cout << d_type;
+            printf("%4d %10jd  %s\n", d->d_reclen,
+                   (intmax_t) d->d_off, d->d_name);
+            bpos += d->d_reclen;
+        }
+    }
+
+    exit(EXIT_SUCCESS);
 }
