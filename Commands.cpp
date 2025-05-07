@@ -173,6 +173,12 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     AliasMap* aliases = SmallShell::getAliasMap();
     const char* thisAlias = aliases->getAlias(firstWord);
 
+    char* args[COMMAND_MAX_ARGS];
+    _parseCommandLine(cmd_line, args);
+    if(string(args[1]) == ">" || string(args[1]) == ">>"){
+        return new RedirectionCommand(cmd_line);
+    }
+
     if (firstWord == "chprompt") {
         return new ChangePromptCommand(cmd_line);
     } else if (firstWord == "jobs") {
@@ -833,5 +839,32 @@ void WatchProcCommand::execute() {
 
     cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
         << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
+}
+
+//$$$$$$$$$$$$$$$$$$$$$$$$$$$$$-spaciel command-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) ,dfFile(-1) {
+    if (this->argsCount >= 3 && (strcmp(this->args[this->argsCount - 2], ">>") == 0 || strcmp(this->args[this->argsCount - 2], ">") == 0)) {
+        this->dfFile = open(this->args[this->argsCount - 1], O_WRONLY | O_CREAT, 0666);
+        if (dfFile == -1) {
+            return;
+        }
+        this->args[this->argsCount - 2] = nullptr;
+        this->argsCount -= 2;
+    }
+}
+
+void RedirectionCommand::execute() {
+    pid_t pid = fork();
+    if(pid == 0){
+        if(this->dfFile != -1) {
+            dup2(this->dfFile, 1);
+            close(this->dfFile);
+        }
+        execvp(this->args[0] , args);
+    }
+    else{
+        wait(NULL);
+    }
 }
 

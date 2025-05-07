@@ -28,7 +28,7 @@ protected:
     char** args;
     const char *cmd;
 public:
-    Command(const char *cmd_line): cmd(cmd_line) {
+    Command(const char *cmd_line): cmd(cmd_line), argsCount(0), args(nullptr) {
         this->args = (char**) malloc(sizeof(char*) * COMMAND_MAX_ARGS);
         if (args == nullptr) {
             perror("smash error: malloc failed");
@@ -90,6 +90,7 @@ public:
 };
 
 class RedirectionCommand : public Command {
+    int dfFile;
     // TODO: Add your data members
 public:
     explicit RedirectionCommand(const char *cmd_line);
