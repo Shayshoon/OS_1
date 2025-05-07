@@ -884,7 +884,6 @@ void DiskUsageCommand::execute() {
             // Get the disk usage (blocks) for this file/directory
             long blocks = getBlocksOfFile(full_path);
             if (blocks != -1) {
-                std::cout << name << ": " << blocks << " blocks" << std::endl;
                 totalBlocks += blocks;  // Add to total
             }
 
