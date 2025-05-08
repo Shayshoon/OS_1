@@ -124,6 +124,18 @@ void parseAliasPattern(const char* input, string& name, char*& command) {
     command = strdup(command_str.c_str()); // Allocate char* memory
 }
 
+string getPwd() {
+    char* buff = getcwd(nullptr, 0);
+    string result;
+
+    if(buff != nullptr){
+        result = string(buff);
+    }
+    free(buff);
+
+    return result;
+}
+
 // TODO: Add your implementation for classes in Commands.h
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -186,7 +198,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new UnAliasCommand(cmd_line);
     } else if (firstWord == "du") {
         return new DiskUsageCommand(cmd_line);
-    } else {
+   } else if (firstWord == "whoami") {
+        return new WhoAmICommand(cmd_line);
+   } else {
         return new ExternalCommand(cmd_line);
     }
 
@@ -242,6 +256,14 @@ JobsList *SmallShell::getjobs() {
 
 AliasMap *SmallShell::getAliasMap() {
     return this->aliases;
+}
+
+JobsList::JobEntry * SmallShell::getForegroundProcess() {
+    return this->foregroundProcess;
+}
+
+void SmallShell::setForegroundProcess(JobsList::JobEntry *fgProcess) {
+    this->foregroundProcess = fgProcess;
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -394,10 +416,9 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    char* buff = getcwd(NULL, 0);
-    if(buff != NULL){
-        std::cout << buff << std::endl;
-        free(buff);
+    string pwd = getPwd();
+    if(!pwd.empty()){
+        cout << pwd << endl;
     }
 }
 
@@ -497,8 +518,15 @@ void ExternalCommand::execute() {
         // parent process
         if (this->isBackground) {
             SmallShell::getInstance().getjobs()->addJob(this, pid, false);
-        } else if (waitpid(pid, nullptr, 0) == -1) {
-            perror("smash error: waitpid failed");
+        } else {
+            JobsList::JobEntry job = JobsList::JobEntry(nullptr, false, 0, pid);
+            SmallShell::getInstance().setForegroundProcess(&job);
+
+            if (waitpid(pid, nullptr, 0) == -1) {
+                perror("smash error: waitpid failed");
+            }
+
+            SmallShell::getInstance().setForegroundProcess(nullptr);
         }
     } else {
         // child process
@@ -539,6 +567,7 @@ void QuitCommand::execute() {
 
 void ForegroundCommand::execute() {
     JobsList::JobEntry* job = this->jobs->getJobById(this->jobId);
+    SmallShell::getInstance().setForegroundProcess(job);
 
     if (job->getIsStopped()) {
         kill(job->getPid(), SIGCONT);
@@ -551,6 +580,7 @@ void ForegroundCommand::execute() {
         perror("smash error: waitpid failed");
     }
 
+    SmallShell::getInstance().setForegroundProcess(nullptr);
     this->jobs->removeJobById(this->jobId);
 }
 
@@ -888,67 +918,43 @@ void DiskUsageCommand::execute() {
     // Calculate the total disk usage in KB
     double totalKB = 0.5 * getBlocksOfDirectory(path);  // Assuming each block is 512 bytes (0.5 KB)
     std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
-
-//        int                  fd;
-//    char                 d_type;
-//    char                 buf[BUFF_SIZE];
-//    long                 nread;
-//    struct dirent  *d;
-//
-//    long totalBlocks = 0;
-//
-//    fd = open(this->argsCount > 1 ? this->args[1] : ".", O_RDONLY | O_DIRECTORY);
-//    if (fd == -1) {
-//        cerr << "open";
-//        exit(1);
-//    }
-//
-//    while (true) {
-//        nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE);
-//        if (nread == -1) {
-//            perror("getdents64");
-//            exit(1);
-//        }
-//        if (nread == 0) {
-//            break;
-//        }
-//
-//        for (size_t bpos = 0; bpos < (size_t) nread; bpos += d->d_reclen) {
-//            d = (struct dirent *) (buf + bpos);
-//            std::string name = d->d_name;
-//
-//            // Skip "." and ".." directories
-//            if (name == "." || name == "..") {
-//                bpos += d->d_reclen;
-//                continue;
-//            }
-//
-//            // Construct the full path to the file or directory
-//            std::string full_path = this->path + "/" + name;
-//
-//            // check if it is a directory using stat
-//            struct stat sb;
-//            if (stat(full_path.c_str(), &sb) == -1) {
-//                perror("stat");
-//                exit(1);
-//            }
-//
-//            if (sb.st_mode & S_IFDIR) {
-//                // If it's a directory, recursively call getBlocksOfFile
-//                DiskUsageCommand subCommand(full_path.c_str());
-//                subCommand.execute();
-//                totalBlocks += subCommand.getTotalBlocks();
-//            } else if (sb.st_mode & S_IFREG ) {
-//                // If it's a file, get the blocks
-//                long blocks = getBlocksOfFile(full_path);
-//                if (blocks != -1) {
-//                    totalBlocks += blocks;  // Add to total
-//                }
-//            }
-//        }
-//    }
-//
-//    close(fd);
-
 }
 
+void WhoAmICommand::execute() {
+    cout << this->username << " " << getPwd() << endl;
+}
+
+WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
+    uid_t uid = getuid();
+
+//    open /etc/passwd file using only syscalls
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+
+    char* buffer = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd, buffer, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buffer;
+        return;
+    }
+    buffer[bytesRead] = '\0';
+    string passwdContent(buffer);
+    delete[] buffer;
+
+    vector<string> lines = split(passwdContent, '\n');
+
+    for (const string &line : lines) {
+        if (!line.empty()) {
+            vector<string> fields = split(line, ':');
+            if (fields.size() > 2 && stoi(fields[2]) == (int) uid) {
+                this->username = fields[0];
+                break;
+            }
+        }
+    }
+}
