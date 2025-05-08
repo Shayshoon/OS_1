@@ -234,6 +234,14 @@ AliasMap *SmallShell::getAliasMap() {
     return this->aliases;
 }
 
+JobsList::JobEntry * SmallShell::getForegroundProcess() {
+    return this->foregroundProcess;
+}
+
+void SmallShell::setForegroundProcess(JobsList::JobEntry *fgProcess) {
+    this->foregroundProcess = fgProcess;
+}
+
 //%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 void JobsList::printJobsList() {
@@ -487,8 +495,15 @@ void ExternalCommand::execute() {
         // parent process
         if (this->isBackground) {
             SmallShell::getInstance().getjobs()->addJob(this, pid, false);
-        } else if (waitpid(pid, nullptr, 0) == -1) {
-            perror("smash error: waitpid failed");
+        } else {
+            JobsList::JobEntry job = JobsList::JobEntry(nullptr, false, 0, pid);
+            SmallShell::getInstance().setForegroundProcess(&job);
+
+            if (waitpid(pid, nullptr, 0) == -1) {
+                perror("smash error: waitpid failed");
+            }
+
+            SmallShell::getInstance().setForegroundProcess(nullptr);
         }
     } else {
         // child process
@@ -529,6 +544,7 @@ void QuitCommand::execute() {
 
 void ForegroundCommand::execute() {
     JobsList::JobEntry* job = this->jobs->getJobById(this->jobId);
+    SmallShell::getInstance().setForegroundProcess(job);
 
     if (job->getIsStopped()) {
         kill(job->getPid(), SIGCONT);
@@ -541,6 +557,7 @@ void ForegroundCommand::execute() {
         perror("smash error: waitpid failed");
     }
 
+    SmallShell::getInstance().setForegroundProcess(nullptr);
     this->jobs->removeJobById(this->jobId);
 }
 

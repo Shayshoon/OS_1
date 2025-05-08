@@ -388,6 +388,7 @@ private:
     std::string prompt;
     char* lastDirectory;
     char* currDirectory;
+    JobsList::JobEntry* foregroundProcess;
     JobsList* jobs;
     AliasMap* aliases;
     SmallShell();
@@ -418,6 +419,8 @@ public:
     AliasMap* getAliasMap();
 
     // TODO: add extra methods as needed
+    JobsList::JobEntry * getForegroundProcess();
+    void setForegroundProcess(JobsList::JobEntry *fgProcess);
 };
 
 #endif //SMASH_COMMAND_H_
