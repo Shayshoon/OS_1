@@ -127,11 +127,11 @@ public:
 };
 
 class WhoAmICommand : public Command {
+    std::string username;
 public:
     WhoAmICommand(const char *cmd_line);
 
-    virtual ~WhoAmICommand() {
-    }
+    ~WhoAmICommand() override = default;
 
     void execute() override;
 };
