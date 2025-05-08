@@ -834,68 +834,121 @@ long getBlocksOfFile(const string& path) {
     return sb.st_blocks;
 }
 
-//void DiskUsageCommand::execute() {
-////    iterate recursively over the directory using getdents syscall only
-//    struct linux_dirent* dirent = new linux_dirent[BUFF_SIZE];
-//    int fd = open(this->path.c_str(), O_RDONLY | O_DIRECTORY);
-//    getdents64(fd, );
-//
-//
-//    cout << "Total disk usage: " << std::ceil(0.5 * double(getBlocksOfFile(this->path))) << " KB" << endl;
-//}
-void DiskUsageCommand::execute() {
-    int                  fd;
-    char                 d_type;
-    char                 buf[BUFF_SIZE];
-    long                 nread;
-    struct dirent  *d;
-
-    long totalBlocks = 0;
-
-    fd = open(this->argsCount > 1 ? this->args[1] : ".", O_RDONLY | O_DIRECTORY);
+long getBlocksOfDirectory(const string& path) {
+    int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY);
     if (fd == -1) {
         cerr << "open";
         exit(1);
     }
 
-    while (true) {
-        nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE);
+    int nread;
+    char buf[BUFF_SIZE];
+    long totalBlocks = 0;
+    struct dirent *d;
+
+    while ((nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE)) != 0) {
         if (nread == -1) {
-            perror("getdents64");
+            perror("smash error: getdents64 failed");
             exit(1);
         }
-        if (nread == 0) {
-            break;
-        }
-
-        for (size_t bpos = 0; bpos < (size_t) nread;) {
+        for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
             d = (struct dirent *) (buf + bpos);
-            std::string name = d->d_name;
+            string name = d->d_name;
 
             // Skip "." and ".." directories
             if (name == "." || name == "..") {
-                bpos += d->d_reclen;
                 continue;
             }
 
             // Construct the full path to the file or directory
-            std::string full_path = this->path + "/" + name;
+            string full_path = path + "/" + name;
 
-            // Get the disk usage (blocks) for this file/directory
-            long blocks = getBlocksOfFile(full_path);
-            if (blocks != -1) {
-                totalBlocks += blocks;  // Add to total
+            // check if it is a directory using stat
+            struct stat sb;
+            if (stat(full_path.c_str(), &sb) == -1) {
+                perror("smash error: stat failed");
+                exit(1);
             }
 
-            bpos += d->d_reclen;
+            if (sb.st_mode & S_IFDIR) {
+                totalBlocks += getBlocksOfDirectory(full_path);
+            } else if (sb.st_mode & S_IFREG) {
+                totalBlocks += getBlocksOfFile(full_path);
+            }
         }
+
     }
 
-close(fd);
+    close(fd);
 
-// Calculate the total disk usage in KB
-double totalKB = 0.5 * totalBlocks;  // Assuming each block is 512 bytes (0.5 KB)
-std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
+    return totalBlocks;
+}
+
+void DiskUsageCommand::execute() {
+    // Calculate the total disk usage in KB
+    double totalKB = 0.5 * getBlocksOfDirectory(path);  // Assuming each block is 512 bytes (0.5 KB)
+    std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
+
+//        int                  fd;
+//    char                 d_type;
+//    char                 buf[BUFF_SIZE];
+//    long                 nread;
+//    struct dirent  *d;
+//
+//    long totalBlocks = 0;
+//
+//    fd = open(this->argsCount > 1 ? this->args[1] : ".", O_RDONLY | O_DIRECTORY);
+//    if (fd == -1) {
+//        cerr << "open";
+//        exit(1);
+//    }
+//
+//    while (true) {
+//        nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE);
+//        if (nread == -1) {
+//            perror("getdents64");
+//            exit(1);
+//        }
+//        if (nread == 0) {
+//            break;
+//        }
+//
+//        for (size_t bpos = 0; bpos < (size_t) nread; bpos += d->d_reclen) {
+//            d = (struct dirent *) (buf + bpos);
+//            std::string name = d->d_name;
+//
+//            // Skip "." and ".." directories
+//            if (name == "." || name == "..") {
+//                bpos += d->d_reclen;
+//                continue;
+//            }
+//
+//            // Construct the full path to the file or directory
+//            std::string full_path = this->path + "/" + name;
+//
+//            // check if it is a directory using stat
+//            struct stat sb;
+//            if (stat(full_path.c_str(), &sb) == -1) {
+//                perror("stat");
+//                exit(1);
+//            }
+//
+//            if (sb.st_mode & S_IFDIR) {
+//                // If it's a directory, recursively call getBlocksOfFile
+//                DiskUsageCommand subCommand(full_path.c_str());
+//                subCommand.execute();
+//                totalBlocks += subCommand.getTotalBlocks();
+//            } else if (sb.st_mode & S_IFREG ) {
+//                // If it's a file, get the blocks
+//                long blocks = getBlocksOfFile(full_path);
+//                if (blocks != -1) {
+//                    totalBlocks += blocks;  // Add to total
+//                }
+//            }
+//        }
+//    }
+//
+//    close(fd);
 
 }
 
