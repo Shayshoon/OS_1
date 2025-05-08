@@ -13,6 +13,14 @@
 #include <cstring>
 #include <fcntl.h>
 #include <algorithm>
+#include <sys/stat.h>
+#include <cmath>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <cerrno>
+
 
 using namespace std;
 
@@ -116,6 +124,18 @@ void parseAliasPattern(const char* input, string& name, char*& command) {
     command = strdup(command_str.c_str()); // Allocate char* memory
 }
 
+string getPwd() {
+    char* buff = getcwd(nullptr, 0);
+    string result;
+
+    if(buff != nullptr){
+        result = string(buff);
+    }
+    free(buff);
+
+    return result;
+}
+
 // TODO: Add your implementation for classes in Commands.h
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-SmallShell-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -181,7 +201,11 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(cmd_line);
     } else if (firstWord == "unalias") {
         return new UnAliasCommand(cmd_line);
-    } else {
+    } else if (firstWord == "du") {
+        return new DiskUsageCommand(cmd_line);
+   } else if (firstWord == "whoami") {
+        return new WhoAmICommand(cmd_line);
+   } else {
         return new ExternalCommand(cmd_line);
     }
 
@@ -237,6 +261,14 @@ JobsList *SmallShell::getjobs() {
 
 AliasMap *SmallShell::getAliasMap() {
     return this->aliases;
+}
+
+JobsList::JobEntry * SmallShell::getForegroundProcess() {
+    return this->foregroundProcess;
+}
+
+void SmallShell::setForegroundProcess(JobsList::JobEntry *fgProcess) {
+    this->foregroundProcess = fgProcess;
 }
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-JobsList-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -352,6 +384,23 @@ void AliasMap::print() {
 
 //%%%%%%%%%%%%%%%%%%%%%%%%%-commands-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
+Command::Command(const char *cmd_line): cmd(cmd_line), originalCmdLine(nullptr) {
+    this->args = new char*[COMMAND_MAX_ARGS];
+    this->argsCount = _parseCommandLine(cmd_line, this->args);
+    this->isBackground = _isBackgroundCommand(this->getCmd());
+
+    char* str = strdup(cmd_line);
+
+    if (this->isBackground) {
+        _removeBackgroundSign(str);
+    }
+
+    this->cmd = strdup(cmd_line);
+    this->argsCount = _parseCommandLine(str, this->args);
+    delete[] str;
+}
+
 ChangePromptCommand::ChangePromptCommand(const char *cmdLine): BuiltInCommand(cmdLine) {
     string cmd_s = _trim(string(cmdLine));
     int index = (int) cmd_s.find_first_of(WHITESPACE);
@@ -372,10 +421,9 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    char* buff = getcwd(NULL, 0);
-    if(buff != NULL){
-        std::cout << buff << std::endl;
-        free(buff);
+    string pwd = getPwd();
+    if(!pwd.empty()){
+        cout << pwd << endl;
     }
 }
 
@@ -466,19 +514,6 @@ void JobsCommand::execute() {
     this->jobs->printJobsList();
 }
 
-ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
-    this->isBackground = _isBackgroundCommand(this->getCmd());
-    this->isComplex = string(this->getCmd()).find_first_of("?*") != string::npos;
-
-    if (this->isBackground) {
-        char* str = strdup(cmd_line);
-        _removeBackgroundSign(str);
-        this->cmd = strdup(cmd_line);
-        this->argsCount = _parseCommandLine(str, this->args);
-        delete[] str;
-    }
-}
-
 void ExternalCommand::execute() {
     pid_t pid = fork();
 
@@ -488,8 +523,15 @@ void ExternalCommand::execute() {
         // parent process
         if (this->isBackground) {
             SmallShell::getInstance().getjobs()->addJob(this, pid, false);
-        } else if (waitpid(pid, nullptr, 0) == -1) {
-            perror("smash error: waitpid failed");
+        } else {
+            JobsList::JobEntry job = JobsList::JobEntry(nullptr, false, 0, pid);
+            SmallShell::getInstance().setForegroundProcess(&job);
+
+            if (waitpid(pid, nullptr, 0) == -1) {
+                perror("smash error: waitpid failed");
+            }
+
+            SmallShell::getInstance().setForegroundProcess(nullptr);
         }
     } else {
         // child process
@@ -530,6 +572,7 @@ void QuitCommand::execute() {
 
 void ForegroundCommand::execute() {
     JobsList::JobEntry* job = this->jobs->getJobById(this->jobId);
+    SmallShell::getInstance().setForegroundProcess(job);
 
     if (job->getIsStopped()) {
         kill(job->getPid(), SIGCONT);
@@ -542,6 +585,7 @@ void ForegroundCommand::execute() {
         perror("smash error: waitpid failed");
     }
 
+    SmallShell::getInstance().setForegroundProcess(nullptr);
     this->jobs->removeJobById(this->jobId);
 }
 
@@ -873,3 +917,109 @@ void RedirectionCommand::execute() {
     close(stdoutCopy);
 }
 
+long getBlocksOfFile(const string& path) {
+    struct stat sb {};
+    if (stat(path.c_str(), &sb) == -1) {
+        if (errno == ENOENT) {
+            cerr << "smash error: du: directory " << path << " does not exist" << endl;
+        }
+        perror("smash error: stat failed");
+        return -1;
+    }
+    return sb.st_blocks;
+}
+
+long getBlocksOfDirectory(const string& path) {
+    int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY);
+    if (fd == -1) {
+        cerr << "open";
+        exit(1);
+    }
+
+    int nread;
+    char buf[BUFF_SIZE];
+    long totalBlocks = getBlocksOfFile(path);
+    struct dirent *d;
+
+    while ((nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE)) != 0) {
+        if (nread == -1) {
+            perror("smash error: getdents64 failed");
+            exit(1);
+        }
+        for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
+            d = (struct dirent *) (buf + bpos);
+            string name = d->d_name;
+
+            // Skip "." and ".." directories
+            if (name == "." || name == "..") {
+                continue;
+            }
+
+            // Construct the full path to the file or directory
+            string full_path = path + "/" + name;
+
+            // check if it is a directory using stat
+            struct stat sb;
+            if (stat(full_path.c_str(), &sb) == -1) {
+                perror("smash error: stat failed");
+                exit(1);
+            }
+
+            if (sb.st_mode & S_IFDIR) {
+                totalBlocks += getBlocksOfDirectory(full_path);
+            } else if (sb.st_mode & S_IFREG) {
+                totalBlocks += getBlocksOfFile(full_path);
+            }
+        }
+
+    }
+
+    close(fd);
+
+    return totalBlocks;
+}
+
+void DiskUsageCommand::execute() {
+    // Calculate the total disk usage in KB
+    double totalKB = 0.5 * getBlocksOfDirectory(path);  // Assuming each block is 512 bytes (0.5 KB)
+    std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
+}
+
+void WhoAmICommand::execute() {
+    cout << this->username << " " << getPwd() << endl;
+}
+
+WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
+    uid_t uid = getuid();
+
+//    open /etc/passwd file using only syscalls
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+
+    char* buffer = new char[BUFF_SIZE];
+    ssize_t bytesRead = read(fd, buffer, BUFF_SIZE - 1);
+    close(fd);
+
+    if (bytesRead <= 0) {
+        delete[] buffer;
+        return;
+    }
+    buffer[bytesRead] = '\0';
+    string passwdContent(buffer);
+    delete[] buffer;
+
+    vector<string> lines = split(passwdContent, '\n');
+
+    for (const string &line : lines) {
+        if (!line.empty()) {
+            vector<string> fields = split(line, ':');
+            if (fields.size() > 2 && stoi(fields[2]) == (int) uid) {
+                this->username = fields[0];
+                break;
+            }
+        }
+    }
+}
