@@ -13,6 +13,14 @@
 #include <cstring>
 #include <fcntl.h>
 #include <algorithm>
+#include <sys/stat.h>
+#include <cmath>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <cerrno>
+
 
 using namespace std;
 
@@ -188,9 +196,11 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(cmd_line);
     } else if (firstWord == "unalias") {
         return new UnAliasCommand(cmd_line);
-    } else if (firstWord == "whoami") {
+    } else if (firstWord == "du") {
+        return new DiskUsageCommand(cmd_line);
+   } else if (firstWord == "whoami") {
         return new WhoAmICommand(cmd_line);
-    } else {
+   } else {
         return new ExternalCommand(cmd_line);
     }
 
@@ -840,6 +850,74 @@ void WatchProcCommand::execute() {
 
     cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
+}
+
+long getBlocksOfFile(const string& path) {
+    struct stat sb {};
+    if (stat(path.c_str(), &sb) == -1) {
+        if (errno == ENOENT) {
+            cerr << "smash error: du: directory " << path << " does not exist" << endl;
+        }
+        perror("smash error: stat failed");
+        return -1;
+    }
+    return sb.st_blocks;
+}
+
+long getBlocksOfDirectory(const string& path) {
+    int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY);
+    if (fd == -1) {
+        cerr << "open";
+        exit(1);
+    }
+
+    int nread;
+    char buf[BUFF_SIZE];
+    long totalBlocks = getBlocksOfFile(path);
+    struct dirent *d;
+
+    while ((nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE)) != 0) {
+        if (nread == -1) {
+            perror("smash error: getdents64 failed");
+            exit(1);
+        }
+        for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
+            d = (struct dirent *) (buf + bpos);
+            string name = d->d_name;
+
+            // Skip "." and ".." directories
+            if (name == "." || name == "..") {
+                continue;
+            }
+
+            // Construct the full path to the file or directory
+            string full_path = path + "/" + name;
+
+            // check if it is a directory using stat
+            struct stat sb;
+            if (stat(full_path.c_str(), &sb) == -1) {
+                perror("smash error: stat failed");
+                exit(1);
+            }
+
+            if (sb.st_mode & S_IFDIR) {
+                totalBlocks += getBlocksOfDirectory(full_path);
+            } else if (sb.st_mode & S_IFREG) {
+                totalBlocks += getBlocksOfFile(full_path);
+            }
+        }
+
+    }
+
+    close(fd);
+
+    return totalBlocks;
+}
+
+void DiskUsageCommand::execute() {
+    // Calculate the total disk usage in KB
+    double totalKB = 0.5 * getBlocksOfDirectory(path);  // Assuming each block is 512 bytes (0.5 KB)
+    std::cout << "Total disk usage: " << std::ceil(totalKB) << " KB" << std::endl;
 }
 
 void WhoAmICommand::execute() {
