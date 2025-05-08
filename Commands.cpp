@@ -843,7 +843,7 @@ long getBlocksOfDirectory(const string& path) {
 
     int nread;
     char buf[BUFF_SIZE];
-    long totalBlocks = 0;
+    long totalBlocks = getBlocksOfFile(path);
     struct dirent *d;
 
     while ((nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE)) != 0) {
