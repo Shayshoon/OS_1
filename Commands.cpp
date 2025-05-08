@@ -291,7 +291,7 @@ void JobsList::removeFinishedJobs() {
         pid_t result = waitpid(it->second.getPid(), &status, WNOHANG);
 
         if (result == -1) {
-            perror("smash error: waitpid failed");
+            throw SysError("waitpid");
         } else if (result > 0) {
             // Job finished
             it = this->jobs->erase(it);
@@ -421,7 +421,7 @@ void ChangePromptCommand::execute() {
 }
 
 void ShowPidCommand::execute() {
-    std::cout << SmallShell::getInstance().getPrompt() << " pid is " << getpid() << std::endl;
+    std::cout << SmallShell::getInstance().getPrompt() << " jobId is " << getpid() << std::endl;
 }
 
 void GetCurrDirCommand::execute() {
@@ -437,10 +437,10 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd)
     char* args[COMMAND_MAX_ARGS];
     _parseCommandLine(cmd_line, args);
     if (args[2] != nullptr)//more then one arg
-        std::cerr << "smash error: cd: too many arguments" << std::endl;
+        throw SmashError("cd: too many arguments");
     if (args[1] != nullptr && strcmp(args[1], "-") == 0) {
         if (plastPwd == nullptr || *plastPwd == nullptr)//dont have last direction
-            std::cerr << "smash error: cd: OLDPWD not set" << std::endl;
+            throw SmashError("cd: OLDPWD not set");
         else {
             char* temp = SmallShell::getInstance().getcurrDirectory();
             SmallShell::getInstance().setcurrDirectory(*plastPwd);
@@ -448,9 +448,9 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd)
         }
     } else {
         if (args[1] != nullptr && strcmp(args[1], "..") == 0) {
-            char *buff = getcwd(NULL, 0);
+            char *buff = getcwd(nullptr, 0);
             std::string trimmedPath;
-            if (buff != NULL) {
+            if (buff != nullptr) {
                 std::string fullPath(buff);
                 std::vector<std::string> parts = split(fullPath, '/');
 
@@ -481,36 +481,40 @@ ChangeDirCommand::ChangeDirCommand(const char *cmd_line, char **plastPwd)
 void ChangeDirCommand::execute() {
     const char *path = SmallShell::getInstance().getcurrDirectory();
     if (chdir(path) == -1) {
-        perror("smash error: cd failed");
+        throw SysError("cd failed");
     }
 }
 
 KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line) {
-    char* args[COMMAND_MAX_ARGS];
-    int count = _parseCommandLine(cmd_line ,args);
-    char* end;
-     this->pid = strtoul(args[2], &end, 10);
-    //int signum;
-    if (args[1] != nullptr && args[1][0] == '-') {
-        this->signum = atoi(args[1] + 1);  // Skip the first character (-) and convert to int
+    if (this->argsCount != 3
+        || !_isNumber(this->args[2])
+        || this->args[1][0] != '-'
+        || !_isNumber(this->args[1]+1)) {
+        throw SmashError("kill: invalid arguments");
     }
-    if(count != NUMBEROFSIGNALS && *end == '\0') {
-        std::cout << "smash error: kill: invalid arguments" << std::endl;
-        return;
-    }
+
+    int jobId = atoi(this->args[2]);
+    this->signum = atoi(this->args[1] + 1);
+
     if(this->signum < 1 || this->signum > RANGEOFSIGNALS-1){
-        perror("smash error: kill failed");
-        return;
+        throw SmashError("kill: invalid arguments");
     }
-    if(jobs->getJobById(this->pid) == nullptr){
-        std::cout << "smash error: kill: job-id <" << this->pid << "> does not exist" << std::endl;
-        return;
+
+    JobsList::JobEntry* job = jobs->getJobById(jobId);
+    if(job == nullptr){
+        string errorMsg = "kill: job-id " + std::to_string(jobId) + " does not exist";
+        throw SmashError(strdup(errorMsg.c_str()));
     }
-    std::cout << "signal number " << this->signum << "was sent to pid " << this->pid << std::endl;
+
+    this->pid = job->getPid();
 }
 
 void KillCommand::execute() {
-    kill(pid , signum);
+    if(kill(this->pid , this->signum) == -1){
+        throw SysError("kill");
+    }
+
+    std::cout << "signal number " << this->signum << " was sent to pid " << this->pid << std::endl;
 }
 
 void JobsCommand::execute() {
@@ -522,7 +526,7 @@ void ExternalCommand::execute() {
     pid_t pid = fork();
 
     if (pid < 0) {
-        perror("smash error: fork failed");
+        throw SysError("fork");
     } else if (pid > 0) {
         // parent process
         if (this->isBackground) {
@@ -532,7 +536,7 @@ void ExternalCommand::execute() {
             SmallShell::getInstance().setForegroundProcess(&job);
 
             if (waitpid(pid, nullptr, 0) == -1) {
-                perror("smash error: waitpid failed");
+                throw SysError("waitpid");
             }
 
             SmallShell::getInstance().setForegroundProcess(nullptr);
@@ -552,8 +556,7 @@ void ExternalCommand::execute() {
         }
 
         // if execvp fails, it means external command does not exist
-        perror("smash error: execvp failed");
-        exit(1);
+        throw SysError("execvp");
     }
 }
 
@@ -586,7 +589,7 @@ void ForegroundCommand::execute() {
     cout << job->getCmd() << " " << job->getPid() << endl;
 
     if (waitpid(job->getPid(), nullptr, 0) == -1) {
-        perror("smash error: waitpid failed");
+        throw SysError("waitpid");
     }
 
     SmallShell::getInstance().setForegroundProcess(nullptr);
@@ -596,23 +599,20 @@ void ForegroundCommand::execute() {
 ForegroundCommand::ForegroundCommand(const char *cmd_line, JobsList *jobs)
     : BuiltInCommand(cmd_line), jobs(jobs) {
     if (this->argsCount > 2) {
-        cerr << "smash error: fg: invalid arguments" <<  endl;
-        return;
+        throw SmashError("fg: invalid arguments");
     } if (this->argsCount == 2) {
         if (!_isNumber(this->args[1])) {
-            cerr << "smash error: fg: invalid arguments" <<  endl;
-            return;
+            throw SmashError("fg: invalid arguments");
         }
 
         this->jobId = atoi(this->args[1]);
         if (this->jobs->getJobById(this->jobId) == nullptr) {
-            cerr << "smash error: fg: job-id " << this->jobId << " does not exist" << endl;
-            return;
+            string errorMsg = "fg: job-id " + std::to_string(this->jobId) + " does not exist";
+            throw SmashError(strdup(errorMsg.c_str()));
         }
     } else {
         if (this->jobs->getJobs()->empty()) {
-            cerr << "smash error: fg: jobs list is empty" << endl;
-            return;
+            throw SmashError("fg: jobs list is empty");
         }
 
         this->jobId = this->jobs->getJobs()->rbegin()->first;
@@ -622,7 +622,7 @@ ForegroundCommand::ForegroundCommand(const char *cmd_line, JobsList *jobs)
 
 UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line) {
     if (this->argsCount < 2) {
-        cerr << "smash error: unsetenv: not enough arguments" << endl;
+        throw SmashError("unsetenv: not enough arguments");
     }
 
     std::ostringstream oss;
@@ -631,31 +631,31 @@ UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line
     int fd = open(path.c_str(), O_RDONLY);
 
     if (fd == -1) {
-        cerr << "smash error: open failed" << endl;
-    } else {
-        char *buffer = (char *) malloc(4096);
-
-        if (buffer == nullptr) {
-            perror("smash error: malloc failed");
-        } else {
-            ssize_t bytesRead = read(fd, buffer, 4096);
-            buffer[bytesRead] = '\0';
-
-            if (bytesRead == -1) {
-                perror("smash error: read failed");
-            } else {
-                string env(buffer, bytesRead);
-                this->envVariables = split(env, '\0');
-
-                for (auto & envVariable : this->envVariables) {
-                    string str = envVariable;
-                    envVariable = str.substr(0, str.find('='));
-                }
-            }
-            free(buffer);
-        }
-        close(fd);
+        throw SysError("open");
     }
+    char *buffer = (char *) malloc(4096);
+
+    if (buffer == nullptr) {
+        throw SysError("malloc");
+    }
+    ssize_t bytesRead = read(fd, buffer, 4096);
+    buffer[bytesRead] = '\0';
+
+    if (bytesRead == -1) {
+        throw SysError("read");
+    }
+
+    string env(buffer, bytesRead);
+    this->envVariables = split(env, '\0');
+
+    for (auto & envVariable : this->envVariables) {
+        string str = envVariable;
+        envVariable = str.substr(0, str.find('='));
+    }
+
+    free(buffer);
+    close(fd);
+
 }
 
 
@@ -690,8 +690,8 @@ void UnSetEnvCommand::execute() {
 //    check if the args are valid
     for (int i = 1; i < this->argsCount; i++) {
         if (!this->doesEnvVarExist(this->args[i])) {
-            cerr << "smash error: unsetenv: " << this->args[i] << " does not exist" << endl;
-            continue;
+            string errorMsg = "unsetenv: " + string(this->args[i]) + " does not exist";
+            throw SmashError(strdup(errorMsg.c_str()));
         }
     }
 
@@ -709,20 +709,18 @@ AliasCommand::AliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
     if(!(this->print = this->argsCount < 2)) {
         regex pattern("^alias [a-zA-Z0-9_]+='[^']*'$");
 
-        if (regex_match(string(cmd_line), pattern)) {
-            parseAliasPattern(this->getCmd(), this->aliasName, this->cmdLine);
-            AliasMap* aliases = SmallShell::getInstance().getAliasMap();
+        if (!regex_match(string(cmd_line), pattern)) {
+            throw SmashError("alias: invalid alias format");
+        }
+        parseAliasPattern(this->getCmd(), this->aliasName, this->cmdLine);
+        AliasMap *aliases = SmallShell::getInstance().getAliasMap();
 
-            if (aliases->getAlias(this->aliasName) != nullptr
-                || aliases->getShellKeywords().count(this->aliasName) > 0) {
+        if (aliases->getAlias(this->aliasName) != nullptr
+            || aliases->getShellKeywords().count(this->aliasName) > 0) {
 
-                cerr << "smash error: aliases: " << aliases
-                     << " already exists or is a reserved command" << endl;
-                return;
-            }
-        } else {
-            cerr << "smash error: alias: invalid alias format" << endl;
-            return;
+            string errorMsg =
+                    "alias: " + this->aliasName + " already exists or is a reserved command";
+            throw SmashError(strdup(errorMsg.c_str()));
         }
     }
 }
@@ -745,13 +743,12 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line): BuiltInCommand(cmd_line) {
     int count = _parseCommandLine(cmd_line ,args);
     AliasMap* aliases = SmallShell::getInstance().getAliasMap();
     if (args[1] == nullptr){
-        cout << "smash error: unalias: not enough arguments" << endl;
-        return;
+        throw SmashError("unalias: not enough arguments");
     }
     for (int i=1 ; i<count ; i++){
         if (aliases->getAlias(string(args[i])) == nullptr){
-            cout << "smash error: unalias: " << string(args[i]) << " alias does not exist" << endl;
-            return;
+            string errorMsg = "unalias: " + string(args[i]) + " alias does not exist";
+            throw SmashError(strdup(errorMsg.c_str()));
         }
         unAlias.push_back(string(args[i]));
     }
@@ -767,35 +764,27 @@ void UnAliasCommand::execute() {
 
 WatchProcCommand::WatchProcCommand(const char *cmd_line)
         : BuiltInCommand(cmd_line), cpuUsage(0.0), memoryUsage(""),
-          pidProcess(""), isValid(false){
+          pidProcess(""){
     char* args[COMMAND_MAX_ARGS];
     int count = _parseCommandLine(cmd_line ,args);
     if(count != 2 || !(_isNumber(args[1]))){
-        cout << "smash error: watchproc: invalid arguments" << endl;
-        return;
+        throw SmashError("watchproc: invalid arguments");
     }
     int pid = atoi(args[1]);
     if(kill(pid , 0) == 0) {
         this->pidProcess = args[1];
-        this->isValid = true;
     } else{
-        cout << "smash error: watchproc: pid <" << args[1] << "> does not exist" << endl;
-        return;
+        string errorMsg = "watchproc: jobId " + string(args[1]) + " does not exist";
+        throw SmashError(strdup(errorMsg.c_str()));
     }
 }
 
 void WatchProcCommand::execute() {
-    if (!this->isValid) {
-        perror("error"); // TODO: write meaningful message
-        return;
-    }
-
 //      Read stat file
     string statPath = "/proc/" + this->pidProcess + "/stat";
     int fd = open(statPath.c_str() , O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
-        return;
+        throw SysError("open");
     }
     char* buf = new char[BUFF_SIZE];
     ssize_t bytesRead = read(fd , buf , BUFF_SIZE - 1);
@@ -815,8 +804,7 @@ void WatchProcCommand::execute() {
 //    read uptime file
     fd = open("/proc/uptime" , O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
-        return;
+        throw SysError("open");
     }
     read(fd , buf , BUFF_SIZE - 1);
     close(fd);
@@ -833,8 +821,7 @@ void WatchProcCommand::execute() {
     string statusPath = "/proc/" + this->pidProcess + "/status";
     fd = open(statusPath.c_str() , O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
-        return;
+        throw SysError("open");
     }
     bytesRead = read(fd , buf, BUFF_SIZE - 1);
     close(fd);
@@ -886,9 +873,7 @@ RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) 
     this->outputFile = open(path.c_str(), flag, 0666);
 
     if (outputFile == -1) {
-        perror("smash error: open failed");
-        cerr << "errno " << errno << endl;
-        return;
+        throw SysError("open");
     }
 
     this->cmdToRun = string(cmd_line);
@@ -898,14 +883,12 @@ RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) 
 void RedirectionCommand::execute() {
     int stdoutCopy = dup(STDOUT_FILENO);
     if (stdoutCopy == -1) {
-        perror("smash error: dup failed");
-        return;
+        throw SysError("dup");
     }
 
     if (dup2(this->outputFile, STDOUT_FILENO) == -1) {
-        perror("smash error: dup2 failed");
         close(this->outputFile);
-        return;
+        throw SysError("dup2");
     }
     close(this->outputFile);
 
@@ -913,9 +896,8 @@ void RedirectionCommand::execute() {
     cmd->execute();
 
     if (dup2(stdoutCopy, STDOUT_FILENO) == -1) {
-        perror("smash error: dup2 failed");
         close(stdoutCopy);
-        return;
+        throw SysError("dup2");
     }
 
     close(stdoutCopy);
@@ -925,10 +907,10 @@ long getBlocksOfFile(const string& path) {
     struct stat sb {};
     if (stat(path.c_str(), &sb) == -1) {
         if (errno == ENOENT) {
-            cerr << "smash error: du: directory " << path << " does not exist" << endl;
+            string errorMsg = "du: directory " + path + " does not exist";
+            throw SmashError(strdup(errorMsg.c_str()));
         }
-        perror("smash error: stat failed");
-        return -1;
+        throw SysError("stat");
     }
     return sb.st_blocks;
 }
@@ -936,19 +918,18 @@ long getBlocksOfFile(const string& path) {
 long getBlocksOfDirectory(const string& path) {
     int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY);
     if (fd == -1) {
-        cerr << "open";
-        exit(1);
+        SysError("open");
     }
 
     int nread;
     char buf[BUFF_SIZE];
-    long totalBlocks = getBlocksOfFile(path);
+    long totalBlocks = 0;
     struct dirent *d;
 
     while ((nread = syscall(SYS_getdents64, fd, buf, BUFF_SIZE)) != 0) {
         if (nread == -1) {
-            perror("smash error: getdents64 failed");
-            exit(1);
+            close(fd);
+            SysError("getdents64");
         }
         for (int bpos = 0; bpos < nread; bpos += d->d_reclen) {
             d = (struct dirent *) (buf + bpos);
@@ -965,15 +946,15 @@ long getBlocksOfDirectory(const string& path) {
             // check if it is a directory using stat
             struct stat sb;
             if (stat(full_path.c_str(), &sb) == -1) {
-                perror("smash error: stat failed");
+                SysError("stat");
                 exit(1);
             }
 
             if (sb.st_mode & S_IFDIR) {
                 totalBlocks += getBlocksOfDirectory(full_path);
-            } else if (sb.st_mode & S_IFREG) {
-                totalBlocks += getBlocksOfFile(full_path);
             }
+
+            totalBlocks += getBlocksOfFile(full_path);
         }
 
     }
@@ -999,8 +980,7 @@ WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 //    open /etc/passwd file using only syscalls
     int fd = open("/etc/passwd", O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
-        return;
+        SysError("open");
     }
 
     char* buffer = new char[BUFF_SIZE];
@@ -1043,27 +1023,22 @@ PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {
 void PipeCommand::execute() {
     int pipefd[2];
     if (pipe(pipefd) == -1) {
-        perror("smash error: pipe failed");
-        return;
+        throw SysError("pipe");
     }
 
     pid_t pid = fork();
     if (pid == -1) {
-        perror("smash error: fork failed");
-        return;
+        throw SysError("fork");
     } else if (pid == 0) {
         // Child process for receiver
         if (close(pipefd[1]) == -1) {
-            perror("smash error: close failed");
-            exit(1);
+            throw SysError("close");
         }
         if (dup2(pipefd[0], STDIN_FILENO) == -1) {
-            perror("smash error: dup2 failed");
-            exit(1);
+            throw SysError("dup2");
         }
         if (close(pipefd[0]) == -1) {
-            perror("smash error: close failed");
-            exit(1);
+            throw SysError("close");
         }
         Command* cmd = SmallShell::getInstance().CreateCommand(this->receiver.c_str());
         cmd->execute();
@@ -1072,32 +1047,26 @@ void PipeCommand::execute() {
         int fileno = this->forwardErrors ? STDERR_FILENO : STDOUT_FILENO;
         int stdout_fd = dup(fileno);
         if (stdout_fd == -1) {
-            perror("smash error: dup failed");
-            return;
+            throw SysError("dup");
         }
         if (dup2(pipefd[1], fileno) == -1) {
-            perror("smash error: dup2 failed");
-            return;
+            throw SysError("dup2");
         }
         if (close(pipefd[1]) == -1) {
-            perror("smash error: close failed");
-            return;
+            throw SysError("close");
         }
         if (close(pipefd[0]) == -1) {
-            perror("smash error: close failed");
-            return;
+            throw SysError("close");
         }
 
         Command* cmd = SmallShell::getInstance().CreateCommand(this->sender.c_str());
         cmd->execute();
 
         if (dup2(stdout_fd, fileno) == -1) {
-            perror("smash error: dup2 failed");
-            return;
+            throw SysError("dup2");
         }
         if (close(stdout_fd) == -1) {
-            perror("smash error: close failed");
-            return;
+            throw SysError("close");
         }
     }
 

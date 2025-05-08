@@ -21,6 +21,26 @@
 
 int _parseCommandLine(const char *cmd_line, char **args);
 
+class SmashError : public std::exception {
+private:
+    char * message;
+public:
+    SmashError(char * msg): message(msg) {}
+    char* what() const noexcept override {
+        return message;
+    }
+};
+
+class SysError : public std::exception {
+private:
+    char * message;
+public:
+    SysError(char * msg): message(msg) {}
+    char* what() const noexcept override {
+        return message;
+    }
+};
+
 class Command {
     // TODO: Add your data members
 protected:
@@ -288,7 +308,7 @@ public:
 
 class KillCommand : public BuiltInCommand {
     int signum;
-    unsigned long pid;
+    pid_t pid;
     // TODO: Add your data members
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
@@ -357,7 +377,6 @@ class WatchProcCommand : public BuiltInCommand {
     double cpuUsage;
     std::string memoryUsage;
     std::string pidProcess;
-    bool isValid;
 public:
     WatchProcCommand(const char *cmd_line);
 
