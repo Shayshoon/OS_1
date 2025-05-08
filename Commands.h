@@ -96,7 +96,8 @@ public:
 };
 
 class RedirectionCommand : public Command {
-    // TODO: Add your data members
+    int outputFile;
+    std::string cmdToRun;
 public:
     explicit RedirectionCommand(const char *cmd_line);
 

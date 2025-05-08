@@ -168,6 +168,11 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
     const char* thisAlias = this->aliases->getAlias(firstWord);
 
+    if (regex_match(cmd_s, regex("^(([^>]+>[^>]+)|([^>]+>>[^>]+))$"))) {
+
+        return new RedirectionCommand(cmd_line);
+    }
+
     if (thisAlias != nullptr) {
         string aliasCmd = _trim(string(thisAlias))
                 + cmd_s.substr(firstWord.length(), string::npos);
@@ -850,6 +855,66 @@ void WatchProcCommand::execute() {
 
     cout << "PID: " << this->pidProcess << " | CPU Usage: " << this->cpuUsage
          << "% | Memory Usage: " << stod(this->memoryUsage) / 1024 << " MB" << endl;
+}
+
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%-special command-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+RedirectionCommand::RedirectionCommand(const char *cmd_line): Command(cmd_line) , outputFile(-1) {
+    int flag = O_CREAT | O_WRONLY;
+    bool appendMode;
+
+    string cmd_s = _trim(string(cmd_line));
+    appendMode = cmd_s.find(">>") != string::npos;
+    flag |= appendMode ? O_APPEND : O_TRUNC;
+
+    vector<string> parts = split(cmd_s, '>');
+
+    string path = _trim(parts.rbegin()->data());
+    char* path_c = strdup(path.c_str());
+    if (_isBackgroundCommand(path_c)) {
+        _removeBackgroundSign(path_c);
+        path = string(path_c);
+    }
+    delete path_c;
+    path = path.substr(0, path.find_first_of(WHITESPACE));
+    string cmd = _trim(parts.front());
+
+    this->outputFile = open(path.c_str(), flag, 0666);
+
+    if (outputFile == -1) {
+        perror("smash error: open failed");
+        cerr << "errno " << errno << endl;
+        return;
+    }
+
+    this->cmdToRun = string(cmd_line);
+    this->cmdToRun = this->cmdToRun.substr(0, this->cmdToRun.find_first_of('>'));
+}
+
+void RedirectionCommand::execute() {
+    int stdoutCopy = dup(STDOUT_FILENO);
+    if (stdoutCopy == -1) {
+        perror("smash error: dup failed");
+        return;
+    }
+
+    if (dup2(this->outputFile, STDOUT_FILENO) == -1) {
+        perror("smash error: dup2 failed");
+        close(this->outputFile);
+        return;
+    }
+    close(this->outputFile);
+
+    Command* cmd = SmallShell::getInstance().CreateCommand(this->cmdToRun.c_str());
+    cmd->execute();
+
+    if (dup2(stdoutCopy, STDOUT_FILENO) == -1) {
+        perror("smash error: dup2 failed");
+        close(stdoutCopy);
+        return;
+    }
+
+    close(stdoutCopy);
 }
 
 long getBlocksOfFile(const string& path) {
