@@ -148,7 +148,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string firstWord = cmd_s.substr(0, cmd_s.find_first_of(WHITESPACE));
     const char* thisAlias = this->aliases->getAlias(firstWord);
 
-    if (regex_match(cmd_s, regex("^(([^>]*>[^>]*)|([^>]*>>[^>]*))$"))) {
+    if (regex_match(cmd_s, regex("^(([^>]+>[^>]+)|([^>]+>>[^>]+))$"))) {
+
         return new RedirectionCommand(cmd_line);
     }
 
