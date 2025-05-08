@@ -96,7 +96,8 @@ public:
 };
 
 class RedirectionCommand : public Command {
-    // TODO: Add your data members
+    int outputFile;
+    std::string cmdToRun;
 public:
     explicit RedirectionCommand(const char *cmd_line);
 
@@ -120,21 +121,27 @@ public:
 };
 
 class DiskUsageCommand : public Command {
+    std::string path;
 public:
-    DiskUsageCommand(const char *cmd_line);
-
-    virtual ~DiskUsageCommand() {
+    DiskUsageCommand(const char *cmd_line): Command(cmd_line) {
+        if (this->argsCount > 2) {
+            std::cerr << "smash error: du: too many arguments";
+            exit(1);
+        }
+        this->path = this->argsCount > 1 ? this->args[1] : "."; // TODO: use absolute path
     }
+
+    ~DiskUsageCommand() override = default;
 
     void execute() override;
 };
 
 class WhoAmICommand : public Command {
+    std::string username;
 public:
     WhoAmICommand(const char *cmd_line);
 
-    virtual ~WhoAmICommand() {
-    }
+    ~WhoAmICommand() override = default;
 
     void execute() override;
 };
@@ -391,6 +398,7 @@ private:
     std::string prompt;
     char* lastDirectory;
     char* currDirectory;
+    JobsList::JobEntry* foregroundProcess;
     JobsList* jobs;
     AliasMap* aliases;
     SmallShell();
@@ -421,6 +429,8 @@ public:
     AliasMap* getAliasMap();
 
     // TODO: add extra methods as needed
+    JobsList::JobEntry * getForegroundProcess();
+    void setForegroundProcess(JobsList::JobEntry *fgProcess);
 };
 
 #endif //SMASH_COMMAND_H_
